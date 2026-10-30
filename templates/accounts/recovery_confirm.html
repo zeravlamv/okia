@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Contraseña nueva · OKIA{% endblock %}
+{% block content %}
+  <h1>Contraseña nueva</h1>
+  {% if validlink %}
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit">Guardar</button>
+    </form>
+  {% else %}
+    <p class="error">El enlace no sirve. Puede pedir uno nuevo.</p>
+    <p><a href="{% url 'password-recover' %}">Pedir un enlace nuevo</a></p>
+  {% endif %}
+{% endblock %}

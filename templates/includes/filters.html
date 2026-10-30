@@ -1,0 +1,21 @@
+<form class="filters" method="post" action="{% url 'apply-filters' %}">
+  {% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.path }}">
+  <label>
+    Empresa
+    <select name="codigo_empresa">
+      {% for code, label in company_options %}
+        <option value="{{ code }}" {% if code == company %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Ejercicio
+    <select name="ejercicio">
+      {% for option in year_options %}
+        <option value="{{ option }}" {% if option == year %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Aplicar</button>
+</form>

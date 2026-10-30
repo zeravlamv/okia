@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Cuadro de mando · OKIA{% endblock %}
+{% block content %}
+  <h1>Cuadro de mando</h1>
+  {% include "includes/filters.html" %}
+  {% if sample %}
+    <p class="notice">Datos de ejemplo. El origen SQL Server no está configurado.</p>
+  {% elif erp_name %}
+    <p class="notice">Origen comercial {{ erp_name }}.</p>
+  {% endif %}
+  <p>Empresa {{ company }}. Ejercicio {{ year }}.</p>
+  <section class="cards">
+    {% if sales %}
+      <article>
+        <h2>Pedidos de venta</h2>
+        <p>{{ sales.count }} pedidos</p>
+        <p>{{ sales.amount }}</p>
+      </article>
+    {% endif %}
+    {% if purchases %}
+      <article>
+        <h2>Pedidos de compra</h2>
+        <p>{{ purchases.count }} compras con fecha en el ejercicio</p>
+        <p>{{ purchases.amount }}</p>
+      </article>
+    {% endif %}
+    {% if show_margin %}
+      <article>
+        <h2>Margen</h2>
+        <p>{{ margin }}</p>
+        <p>Suma de los pedidos con proyecto único. El coste incluye todo el proyecto.</p>
+      </article>
+    {% endif %}
+    {% if show_income %}
+      <article>
+        <h2>Ingresos contables</h2>
+        <p>{{ income }}</p>
+        <p>Van aparte y no modifican el margen.</p>
+      </article>
+    {% endif %}
+    {% if clientes is not None %}
+      <article>
+        <h2>Clientes</h2>
+        <p>{{ clientes }}</p>
+      </article>
+    {% endif %}
+    {% if proveedores is not None %}
+      <article>
+        <h2>Proveedores</h2>
+        <p>{{ proveedores }}</p>
+      </article>
+    {% endif %}
+    {% if articulos is not None %}
+      <article>
+        <h2>Artículos</h2>
+        <p>{{ articulos }}</p>
+      </article>
+    {% endif %}
+  </section>
+  <div id="breakdown"></div>
+  {{ breakdown|json_script:"breakdown-data" }}
+  <script src="{% static 'js/breakdown.js' %}"></script>
+{% endblock %}

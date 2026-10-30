@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Empresa · OKIA{% endblock %}
+{% block content %}
+  <h1>Empresa</h1>
+  {% if empty %}
+    <p class="error">Solicite una empresa a quien administra. Sin empresas, no hay cifras económicas.</p>
+  {% else %}
+    <p>No hay cifras hasta elegir una empresa.</p>
+    {% if error %}
+      <p class="error">{{ error }}</p>
+    {% endif %}
+    <form method="post">
+      {% csrf_token %}
+      {% for code, label in companies %}
+        <p>
+          <label>
+            <input type="radio" name="codigo_empresa" value="{{ code }}" {% if code == current %}checked{% endif %} required>
+            {{ label }}
+          </label>
+        </p>
+      {% endfor %}
+      <button type="submit">Elegir</button>
+    </form>
+  {% endif %}
+{% endblock %}

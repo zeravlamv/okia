@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Margen de pedidos · OKIA{% endblock %}
+{% block content %}
+  <h1>Margen de pedidos</h1>
+  {% include "includes/filters.html" %}
+  {% if sample %}
+    <p class="notice">Datos de ejemplo. El origen SQL Server no está configurado.</p>
+  {% elif erp_name %}
+    <p class="notice">Origen comercial {{ erp_name }}.</p>
+  {% endif %}
+  {% if missing_company %}
+    <p class="error">No hay una empresa asignada. Sin empresas, no hay cifras económicas.</p>
+  {% elif forbidden %}
+    <p class="error">El perfil no puede consultar pedidos, compras y movimientos de la empresa {{ company }}.</p>
+  {% else %}
+    <p>Empresa {{ company }}. Pedidos del {{ year }}. Los ingresos contables van al lado y no modifican el margen.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Pedido</th>
+          <th>Proyecto</th>
+          <th>Precio de venta</th>
+          <th>Coste</th>
+          <th>Margen</th>
+          <th>Porcentaje</th>
+          <th>Ingresos contables</th>
+          <th>Estado del cálculo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row.identity }}</td>
+            <td>{{ row.project }}</td>
+            <td>{{ row.price }}</td>
+            <td>{{ row.cost }}</td>
+            <td>{{ row.margin }}</td>
+            <td>{{ row.percent }}</td>
+            <td>{{ row.income }}</td>
+            <td>{% if row.incomplete %}Incompleto{% else %}Cerrado{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8">No hay márgenes cerrados en este periodo.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if pending_count %}
+      <p>{{ pending_count }} pedidos quedan fuera de un margen cerrado porque no tienen proyecto o lo comparten.</p>
+    {% endif %}
+  {% endif %}
+{% endblock %}

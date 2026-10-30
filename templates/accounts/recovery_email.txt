@@ -1,0 +1,3 @@
+Para elegir una contraseña nueva abra este enlace. Sirve una sola vez y caduca a los 60 minutos.
+
+{{ protocol }}://{{ domain }}{% url 'password-recover-confirm' uidb64=uid token=token %}
