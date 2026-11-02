@@ -1,0 +1,364 @@
+    {% if evolution_months %}
+      <section class="fiche-block evolution-block" data-palette="ambar" data-detail-url="{% url 'evolution-detail' %}" data-lines-url="{% url 'evolution-lines' %}">
+        {% if evolution %}
+        <div class="evolution-title">
+          <h2>Evolución del ejercicio</h2>
+          <button type="button" class="chart-toggle" aria-expanded="false" aria-controls="evolution-chart">Mostrar gráfica</button>
+        </div>
+        <div class="evolution-chart" id="evolution-chart" hidden>
+        <div class="evolution-heading">
+          <p class="chart-legend">
+            {% if evolution.show_sales %}<span><i class="swatch venta"></i>Ingresos</span>{% endif %}
+            {% if evolution.show_purchases %}<span><i class="swatch compra"></i>Compras</span>{% endif %}
+            {% if evolution.show_expenses %}<span><i class="swatch gasto"></i>Gastos</span>{% endif %}
+            {% if evolution.show_margin %}<span><i class="swatch margen"></i>Margen</span>{% endif %}
+          </p>
+          <div class="palette-picker" role="group" aria-label="Combinación de colores">
+            <button type="button" data-palette="ambar" aria-pressed="true" aria-label="Ámbar y verde" title="Ámbar y verde"></button>
+            <button type="button" data-palette="cobre" aria-pressed="false" aria-label="Cobre y verde" title="Cobre y verde"></button>
+            <button type="button" data-palette="coral" aria-pressed="false" aria-label="Coral e índigo" title="Coral e índigo"></button>
+            <button type="button" data-palette="oro" aria-pressed="false" aria-label="Oro y petróleo" title="Oro y petróleo"></button>
+            <button type="button" data-palette="arena" aria-pressed="false" aria-label="Arena y marino" title="Arena y marino"></button>
+            <button type="button" data-palette="oliva" aria-pressed="false" aria-label="Oliva y ciruela" title="Oliva y ciruela"></button>
+            <button type="button" data-palette="terracota" aria-pressed="false" aria-label="Terracota y acero" title="Terracota y acero"></button>
+          </div>
+        </div>
+        <p class="board-meta">Escala hasta {{ evolution.peak_text }}.</p>
+        <svg class="evolution" viewBox="0 0 1000 300" role="img" aria-label="Ingresos de cada mes, junto a las compras, los gastos y el margen">
+          <line class="grid zero" x1="{{ evolution.left }}" x2="{{ evolution.right }}" y1="{{ evolution.zero_y }}" y2="{{ evolution.zero_y }}"></line>
+          {% for column in evolution.columns %}
+            {% if evolution.show_sales and column.sales_height != "0.0" %}
+              <rect class="bar venta" data-month="{{ column.number }}" data-kind="ingreso" x="{{ column.sales_x }}" y="{{ column.sales_y }}" width="{{ column.width }}" height="{{ column.sales_height }}" rx="2">
+                <title>{{ column.title }}</title>
+              </rect>
+            {% endif %}
+            {% if evolution.show_purchases and column.purchase_height != "0.0" %}
+              <rect class="bar compra" data-month="{{ column.number }}" data-kind="compra" x="{{ column.x }}" y="{{ column.purchase_y }}" width="{{ column.width }}" height="{{ column.purchase_height }}" rx="2">
+                <title>{{ column.title }}</title>
+              </rect>
+            {% endif %}
+            {% if evolution.show_expenses and column.expense_height != "0.0" %}
+              <rect class="bar gasto" data-month="{{ column.number }}" data-kind="gasto" x="{{ column.x }}" y="{{ column.expense_y }}" width="{{ column.width }}" height="{{ column.expense_height }}" rx="2">
+                <title>{{ column.title }}</title>
+              </rect>
+            {% endif %}
+            {% if evolution.show_margin and column.margin_height != "0.0" %}
+              <rect class="bar margen" x="{{ column.x }}" y="{{ column.margin_y }}" width="{{ column.width }}" height="{{ column.margin_height }}" rx="2">
+                <title>{{ column.title }}</title>
+              </rect>
+            {% endif %}
+            <text x="{{ column.tick_x }}" y="278" text-anchor="middle">{{ column.label }}</text>
+          {% endfor %}
+        </svg>
+        </div>
+        {% endif %}
+        <div class="evolution-scroll">
+        <table class="table table-sm evolution-values">
+          <thead>
+            <tr>
+              <th></th>
+              {% for month in evolution_months %}<th>{{ month.label }}</th>{% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% if evolution_months.0.show_sales %}
+              <tr>
+                <th>Ingresos</th>
+                {% for month in evolution_months %}
+                  <td>
+                    {% if month.sales %}
+                      <button type="button" class="amount-link" data-month="{{ month.number }}" data-kind="ingreso">{{ month.sales_text }}</button>
+                    {% else %}
+                      {{ month.sales_text }}
+                    {% endif %}
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endif %}
+            {% if evolution_months.0.show_purchases %}
+              <tr>
+                <th>Compras</th>
+                {% for month in evolution_months %}
+                  <td>
+                    {% if month.purchases %}
+                      <button type="button" class="amount-link" data-month="{{ month.number }}" data-kind="compra">{{ month.purchases_text }}</button>
+                    {% else %}
+                      {{ month.purchases_text }}
+                    {% endif %}
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endif %}
+            {% if evolution_months.0.show_expenses %}
+              <tr>
+                <th>Gastos</th>
+                {% for month in evolution_months %}
+                  <td>
+                    {% if month.expenses %}
+                      <button type="button" class="amount-link" data-month="{{ month.number }}" data-kind="gasto">{{ month.expenses_text }}</button>
+                    {% else %}
+                      {{ month.expenses_text }}
+                    {% endif %}
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endif %}
+            {% if evolution_months.0.show_margin %}
+              <tr>
+                <th>Margen</th>
+                {% for month in evolution_months %}<td>{{ month.margin_text }}</td>{% endfor %}
+              </tr>
+            {% endif %}
+            {% if show_cumulative and evolution_months.0.show_sales %}
+              <tr class="evolution-cumulative">
+                <th>Ingresos acumulados</th>
+                {% for month in evolution_months %}<td>{{ month.cumulative_sales_text }}</td>{% endfor %}
+              </tr>
+            {% endif %}
+            {% if show_cumulative and evolution_months.0.show_purchases %}
+              <tr>
+                <th>Compras acumuladas</th>
+                {% for month in evolution_months %}<td>{{ month.cumulative_purchases_text }}</td>{% endfor %}
+              </tr>
+            {% endif %}
+            {% if show_cumulative and evolution_months.0.show_expenses %}
+              <tr>
+                <th>Gastos acumulados</th>
+                {% for month in evolution_months %}<td>{{ month.cumulative_expenses_text }}</td>{% endfor %}
+              </tr>
+            {% endif %}
+            {% if show_cumulative and evolution_months.0.show_margin %}
+              <tr>
+                <th>Margen acumulado</th>
+                {% for month in evolution_months %}<td>{{ month.cumulative_margin_text }}</td>{% endfor %}
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+        </div>
+        {% if embed_dialogs %}
+        <dialog id="amount-detail" aria-labelledby="amount-detail-title">
+          <button type="button" class="detail-close" data-close-detail>Cerrar</button>
+          <h2 id="amount-detail-title">Detalle</h2>
+          <p class="detail-source" id="amount-detail-source"></p>
+          <div class="evolution-scroll" id="amount-detail-body"></div>
+          <p class="detail-total" id="amount-detail-total"></p>
+        </dialog>
+        <dialog id="line-detail" aria-labelledby="line-detail-title">
+          <button type="button" class="detail-close" data-close-lines>Cerrar</button>
+          <h2 id="line-detail-title">Líneas</h2>
+          <p class="detail-source" id="line-detail-note"></p>
+          <div class="evolution-scroll">
+            <table class="table table-sm evolution-values" id="line-detail-table"></table>
+          </div>
+          <p class="detail-total" id="line-detail-total"></p>
+        </dialog>
+        {% endif %}
+        <script>
+          (function () {
+            var root = document.querySelector(".evolution-block");
+            if (!root) return;
+            var key = "okia-chart-palette";
+            var saved = "ambar";
+            try { saved = localStorage.getItem(key) || saved; } catch (error) { saved = "ambar"; }
+            var buttons = root.querySelectorAll(".palette-picker button");
+            function apply(name) {
+              var known = false;
+              buttons.forEach(function (button) {
+                var selected = button.getAttribute("data-palette") === name;
+                if (selected) known = true;
+                button.setAttribute("aria-pressed", selected ? "true" : "false");
+              });
+              root.setAttribute("data-palette", known ? name : "ambar");
+            }
+            apply(saved);
+            var chartKey = "okia-chart-visible";
+            var chart = root.querySelector(".evolution-chart");
+            var toggle = root.querySelector(".chart-toggle");
+            if (chart && toggle) {
+              function setChart(open) {
+                chart.hidden = !open;
+                toggle.setAttribute("aria-expanded", open ? "true" : "false");
+                toggle.textContent = open ? "Ocultar gráfica" : "Mostrar gráfica";
+              }
+              var chartOpen = false;
+              try { chartOpen = localStorage.getItem(chartKey) === "1"; } catch (error) { chartOpen = false; }
+              setChart(chartOpen);
+              toggle.addEventListener("click", function () {
+                chartOpen = chart.hidden;
+                try { localStorage.setItem(chartKey, chartOpen ? "1" : "0"); } catch (error) {}
+                setChart(chartOpen);
+              });
+              root.querySelector(".palette-picker").addEventListener("click", function (event) {
+                var button = event.target.closest("button");
+                if (!button) return;
+                var name = button.getAttribute("data-palette");
+                try { localStorage.setItem(key, name); } catch (error) {}
+                apply(name);
+              });
+            }
+            var dialog = document.getElementById("amount-detail");
+            var lineDialog = document.getElementById("line-detail");
+            var detailTitle = document.getElementById("amount-detail-title");
+            var detailSource = document.getElementById("amount-detail-source");
+            var detailBody = document.getElementById("amount-detail-body");
+            var detailTotal = document.getElementById("amount-detail-total");
+            function tableFrom(headers, rows, linkRows) {
+              var table = document.createElement("table");
+              table.className = "table table-sm evolution-values";
+              var thead = document.createElement("thead");
+              var headRow = document.createElement("tr");
+              headers.forEach(function (header) {
+                var cell = document.createElement("th");
+                cell.textContent = header;
+                headRow.appendChild(cell);
+              });
+              thead.appendChild(headRow);
+              var tbody = document.createElement("tbody");
+              rows.forEach(function (row, index) {
+                var line = document.createElement("tr");
+                var values = row.cells || row;
+                values.forEach(function (value, column) {
+                  var cell = document.createElement("td");
+                  if (linkRows && column === 2 && row.document) {
+                    var button = document.createElement("button");
+                    button.type = "button";
+                    button.className = "amount-link";
+                    button.setAttribute("data-kind", "lineas");
+                    button.setAttribute("data-project", row.project || "");
+                    button.setAttribute("data-document", row.document || "");
+                    if (row.lineKind) button.setAttribute("data-line-kind", row.lineKind);
+                    button.textContent = value;
+                    cell.appendChild(button);
+                  } else {
+                    cell.textContent = value;
+                  }
+                  line.appendChild(cell);
+                });
+                tbody.appendChild(line);
+              });
+              table.appendChild(thead);
+              table.appendChild(tbody);
+              return table;
+            }
+            function fillDetail(payload) {
+              detailTitle.textContent = payload.title;
+              detailSource.textContent = payload.source ? "Origen: " + payload.source : "";
+              detailBody.replaceChildren();
+              if (payload.pending) {
+                var pending = document.createElement("p");
+                pending.textContent = payload.message;
+                detailBody.appendChild(pending);
+                detailTotal.textContent = "";
+                return;
+              }
+              if (payload.kind === "gasto" || payload.kind === "compra" || payload.kind === "ingreso") {
+                var tree = document.createElement("div");
+                tree.className = "expense-tree";
+                if (!payload.groups.length) {
+                  var empty = document.createElement("p");
+                  empty.textContent = "No hay documentos en este mes.";
+                  tree.appendChild(empty);
+                }
+                payload.groups.forEach(function (group) {
+                  var fold = document.createElement("details");
+                  var summary = document.createElement("summary");
+                  var name = document.createElement("span");
+                  name.textContent = group.label || group.code;
+                  var amount = document.createElement("strong");
+                  amount.textContent = group.amount;
+                  summary.appendChild(name);
+                  summary.appendChild(amount);
+                  fold.appendChild(summary);
+                  fold.appendChild(tableFrom(payload.headers, group.lines, false));
+                  tree.appendChild(fold);
+                });
+                detailBody.appendChild(tree);
+              } else if (!payload.rows.length) {
+                var emptyNote = document.createElement("p");
+                emptyNote.textContent = "No hay documentos en este mes.";
+                detailBody.appendChild(emptyNote);
+              } else {
+                detailBody.appendChild(tableFrom(payload.headers, payload.rows, true));
+              }
+              detailTotal.textContent = "Total " + payload.total;
+            }
+            function openLines(project, documentKey, lineKind) {
+              var url = root.getAttribute("data-lines-url")
+                + "?proyecto=" + encodeURIComponent(project)
+                + "&albaran=" + encodeURIComponent(documentKey);
+              if (lineKind) url += "&tipo=" + encodeURIComponent(lineKind);
+              fetch(url, { headers: { "Accept": "application/json" } }).then(function (response) {
+                if (!response.ok) throw new Error("lineas");
+                return response.json();
+              }).then(function (payload) {
+                document.getElementById("line-detail-title").textContent = payload.title;
+                document.getElementById("line-detail-note").textContent = payload.message || "";
+                var table = document.getElementById("line-detail-table");
+                table.replaceChildren();
+                if (payload.rows.length) {
+                  var built = tableFrom(payload.headers, payload.rows, false);
+                  table.appendChild(built.querySelector("thead"));
+                  table.appendChild(built.querySelector("tbody"));
+                }
+                document.getElementById("line-detail-total").textContent = payload.total ? "Total " + payload.total : "";
+                lineDialog.showModal();
+              }).catch(function () {
+                document.getElementById("line-detail-title").textContent = "Líneas";
+                document.getElementById("line-detail-note").textContent = "No se han podido abrir las líneas.";
+                document.getElementById("line-detail-table").replaceChildren();
+                document.getElementById("line-detail-total").textContent = "";
+                lineDialog.showModal();
+              });
+            }
+            document.addEventListener("click", function (event) {
+              var target = event.target.closest("[data-kind]");
+              if (!target || target.closest(".palette-picker")) return;
+              var kind = target.getAttribute("data-kind");
+              if (kind === "lineas") {
+                openLines(target.getAttribute("data-project"), target.getAttribute("data-document"), target.getAttribute("data-line-kind"));
+                return;
+              }
+              var month = target.getAttribute("data-month");
+              if (!month || (kind !== "ingreso" && kind !== "compra" && kind !== "gasto")) return;
+              fetch(root.getAttribute("data-detail-url") + "?mes=" + month + "&tipo=" + kind, {
+                headers: { "Accept": "application/json" }
+              }).then(function (response) {
+                if (!response.ok) throw new Error("detalle");
+                return response.json();
+              }).then(function (payload) {
+                fillDetail(payload);
+                dialog.showModal();
+              }).catch(function () {
+                detailTitle.textContent = "Detalle";
+                detailSource.textContent = "No se ha podido abrir el detalle.";
+                detailBody.replaceChildren();
+                detailTotal.textContent = "";
+                dialog.showModal();
+              });
+            });
+            dialog.querySelector("[data-close-detail]").addEventListener("click", function () {
+              dialog.close();
+            });
+            lineDialog.querySelector("[data-close-lines]").addEventListener("click", function () {
+              lineDialog.close();
+            });
+            document.addEventListener("keydown", function (event) {
+              if (event.key !== "Escape") return;
+              if (lineDialog.open) {
+                lineDialog.close();
+                event.preventDefault();
+                return;
+              }
+              if (dialog.open) dialog.close();
+            });
+            dialog.addEventListener("click", function (event) {
+              if (event.target === dialog) dialog.close();
+            });
+            lineDialog.addEventListener("click", function (event) {
+              if (event.target === lineDialog) lineDialog.close();
+            });
+          })();
+        </script>
+      </section>
+    {% endif %}

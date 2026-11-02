@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% block title %}De dónde salen los datos · OKIA{% endblock %}
+{% block content %}
+<article class="guide">
+  <h1>De dónde salen los datos</h1>
+  <p class="board-meta">Guía para leer cada pantalla y saber qué tabla de SQL Server alimenta cada cifra.</p>
+  <p>OKIA lee el origen comercial y guarda un resumen. Abrir una pantalla muestra ese resumen. Si el mes del resumen está abierto, al entrar se recalcula solo ese mes. El botón <strong>Actualizar</strong> vuelve a leer SQL Server y sustituye el resumen de la empresa y el ejercicio elegidos. Un mes cerrado conserva las fichas cuyo pedido de venta cae en ese mes. Cerrar o abrir un mes no lee el origen.</p>
+  <p>Todas las lecturas filtran por <code>CodigoEmpresa</code>. Un documento anulado no entra: el estado contiene «anulad» o «cancelad». El importe comercial es la base, sin impuestos. Se escribe con punto de miles, coma decimal y dos decimales, en euros. Ejemplo: 2.447.563,88 EUR. Si falta un importe, esa pieza no se suma y el resultado queda incompleto. Un grupo de información no concedido al perfil no se muestra como cero: la cifra desaparece.</p>
+
+  <ul class="toc">
+    <li><a href="#origen">Tablas del origen</a></li>
+    <li><a href="#controles">Dos controles</a></li>
+    <li><a href="#cuadro">Cuadro de mando</a></li>
+    <li><a href="#arbol">Árbol analítico</a></li>
+    <li><a href="#ficha">Ficha del proyecto</a></li>
+    <li><a href="#mes">Resumen del mes</a></li>
+    <li><a href="#margen">Margen de pedidos</a></li>
+    <li><a href="#nombres">Nombres y acceso</a></li>
+  </ul>
+
+  <h2 id="origen">Tablas del origen</h2>
+  <p>El origen es la base SQL Server del ERP. Estas son las tablas que OKIA consulta.</p>
+  <table class="table table-sm">
+    <thead>
+      <tr><th>Tabla</th><th>Qué aporta</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>CabeceraPedidoCliente</code></td><td>Pedido de venta: fecha, base, cliente, proyecto y estado.</td></tr>
+      <tr><td><code>LineasPedidoCliente</code></td><td>Base de las líneas, solo si la cabecera no trae base.</td></tr>
+      <tr><td><code>CabeceraAlbaranCliente</code></td><td>Albarán de venta: fecha, base, proyecto, facturado y abono.</td></tr>
+      <tr><td><code>LineasAlbaranCliente</code></td><td>Artículo y base de cada línea del albarán de venta.</td></tr>
+      <tr><td><code>CabeceraPedidoProveedor</code></td><td>Pedido de compra: fecha, base, proveedor y proyecto.</td></tr>
+      <tr><td><code>LineasPedidoProveedor</code></td><td>Líneas del pedido de compra. Sirven al artículo, no a un segundo coste.</td></tr>
+      <tr><td><code>CabeceraAlbaranProveedor</code></td><td>Albarán de compra y el pedido de compra al que va ligado.</td></tr>
+      <tr><td><code>LineasAlbaranProveedor</code></td><td>Artículo y base de cada línea del albarán de compra.</td></tr>
+      <tr><td><code>Movimientos</code></td><td>Apunte contable: cuenta, importe, signo, fecha y comentario.</td></tr>
+      <tr><td><code>AnaMovimientos</code></td><td>Reparto analítico del apunte: proyecto, departamento, sección e importe de la fila.</td></tr>
+      <tr><td><code>PlanCuentas</code></td><td>Nombre de la cuenta. El código vive en el movimiento.</td></tr>
+      <tr><td><code>Grupos</code></td><td>Descripción de la cuenta de 1, 2, 3 o 4 dígitos. El grupo de tres dígitos la muestra junto al código.</td></tr>
+      <tr><td><code>Empresas</code></td><td>Nombre de la empresa a partir de <code>CodigoEmpresa</code>.</td></tr>
+      <tr><td><code>Clientes</code></td><td>Nombre del cliente a partir de <code>CodigoCliente</code>.</td></tr>
+      <tr><td><code>Proveedores</code></td><td>Nombre del proveedor a partir de <code>CodigoProveedor</code>.</td></tr>
+      <tr><td><code>CanalesEmpresa</code></td><td>Nombre del canal.</td></tr>
+      <tr><td><code>Delegaciones</code></td><td>Nombre de la delegación.</td></tr>
+      <tr><td><code>Departamentos</code></td><td>Nombre del departamento.</td></tr>
+      <tr><td><code>Proyectos</code></td><td>Nombre del proyecto.</td></tr>
+      <tr><td><code>Secciones</code></td><td>Nombre de la sección.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="controles">Dos controles</h2>
+  <p>El control comercial y el control contable se leen por separado y no se suman entre sí.</p>
+  <h3>Comercial</h3>
+  <p>El importe es <code>BaseImponible</code> de la cabecera. Si esa columna viene vacía, se suman las <code>BaseImponible</code> de las líneas. El pedido de venta se identifica por <code>EjercicioPedido</code>, <code>SeriePedido</code> y <code>NumeroPedido</code>. El albarán, por <code>EjercicioAlbaran</code>, <code>SerieAlbaran</code> y <code>NumeroAlbaran</code>. La fecha del pedido es <code>FechaPedido</code>. La del albarán es <code>FechaAlbaran</code>. Si el documento no tiene fecha, el ejercicio lo sitúa en el año. El departamento y la sección son <code>CodigoDepartamento</code> y <code>CodigoSeccion</code> de la cabecera.</p>
+  <p>Un pedido de compra sin albarán es comprometido. Su base no es coste. El albarán de compra ligado se reconoce porque <code>CabeceraAlbaranProveedor</code> trae <code>EjercicioPedido</code>, <code>SeriePedido</code> y <code>NumeroPedido</code> del pedido al que cubre.</p>
+  <h3>Contable</h3>
+  <p><code>AnaMovimientos</code> se une a <code>Movimientos</code> por <code>AnaMovimientos.CabPosicion = Movimientos.MovPosicion</code>. Una fila con <code>StatusBorrado</code> distinto de cero no entra. El importe y los niveles de la analítica son los de la fila: <code>ImporteAsiento</code>, <code>CodigoCanal</code>, <code>IdDelegacion</code>, <code>CodigoDepartamento</code>, <code>CodigoProyecto</code> y <code>CodigoSeccion</code>. Si el apunte no tiene filas vigentes, se usa una sola vez con los niveles escritos en <code>Movimientos</code>.</p>
+  <p>El signo está en <code>Movimientos.CargoAbono</code>: D es cargo y H es abono. El importe único es <code>Movimientos.ImporteAsiento</code>. El nombre de la cuenta sale de <code>PlanCuentas.Cuenta</code>, unida por <code>CodigoEmpresa</code> y <code>CodigoCuenta</code>. La fecha del apunte es <code>FechaAsiento</code>. Si viene vacía, manda <code>Ejercicio</code>.</p>
+  <p>Una cuenta cuyo <code>CodigoCuenta</code> empieza por 7 es ingreso. El ingreso es el abono menos el cargo. Una cuenta que empieza por 6 es gasto, y el 60 entra: es el albarán de compra ya contabilizado. También entra una cuenta cuyo nombre indique gasto, horas, mano de obra o personal, salvo que sea de ingreso. El gasto es el cargo menos el abono. El asiento cuyo <code>Comentario</code> indica el cierre del ejercicio no es ingreso ni gasto.</p>
+
+  <h2 id="cuadro">Cuadro de mando</h2>
+  <p>Las tarjetas son de la empresa y el ejercicio elegidos. Un documento entra por el año de su fecha. Si no tiene fecha, entra por su ejercicio. Los ingresos y los gastos entran por <code>FechaAsiento</code> y, si no tiene fecha, por <code>Ejercicio</code>. Cada apunte de la tarjeta se cuenta una vez: el reparto de <code>AnaMovimientos</code> no lo duplica.</p>
+  <table class="table table-sm">
+    <thead>
+      <tr><th>Tarjeta</th><th>Tabla de SQL Server</th><th>Cómo se obtiene</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Pedidos de venta</td>
+        <td><code>CabeceraPedidoCliente</code> y, si falta la base, <code>LineasPedidoCliente</code></td>
+        <td>Suma de <code>BaseImponible</code>. La fecha es <code>FechaPedido</code>.</td>
+      </tr>
+      <tr>
+        <td>Pedidos de compra</td>
+        <td><code>CabeceraPedidoProveedor</code> y, si falta la base, <code>LineasPedidoProveedor</code></td>
+        <td>Suma de <code>BaseImponible</code>. Valora el pedido al proveedor. No es el coste del pedido de venta.</td>
+      </tr>
+      <tr>
+        <td>Albaranes de venta</td>
+        <td><code>CabeceraAlbaranCliente</code> y, si falta la base, <code>LineasAlbaranCliente</code></td>
+        <td>Suma de <code>BaseImponible</code> con <code>FechaAlbaran</code> en el ejercicio.</td>
+      </tr>
+      <tr>
+        <td>Albaranes de compra</td>
+        <td><code>CabeceraAlbaranProveedor</code> y, si falta la base, <code>LineasAlbaranProveedor</code></td>
+        <td>Suma de <code>BaseImponible</code> con <code>FechaAlbaran</code> en el ejercicio.</td>
+      </tr>
+      <tr>
+        <td>Ingresos</td>
+        <td><code>Movimientos</code> y <code>PlanCuentas</code></td>
+        <td>Abono menos cargo de las cuentas de ingreso del ejercicio, tengan o no <code>CodigoProyecto</code>.</td>
+      </tr>
+      <tr>
+        <td>Compras</td>
+        <td><code>AnaMovimientos</code> unida a <code>Movimientos</code></td>
+        <td>Apuntes del grupo 60 ya guardados en el proyecto. El resto del grupo 6 no entra en esta tarjeta.</td>
+      </tr>
+      <tr>
+        <td>Gastos</td>
+        <td><code>Movimientos</code></td>
+        <td>Grupo 6 de <code>Movimientos</code> menos las compras del grupo 60. Una cuenta que no empieza por 6 no entra.</td>
+      </tr>
+      <tr>
+        <td>Margen</td>
+        <td><code>Movimientos</code></td>
+        <td>Grupo 7 menos el grupo 6. El porcentaje va sobre los ingresos. Si los ingresos son cero, el porcentaje no aplica.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>En el gráfico, Ingresos es el grupo 7 de <code>Movimientos</code> por <code>FechaAsiento</code>. Compras y gastos son los de las tarjetas, partidos por el mes del apunte. El margen del mes es ingresos menos compras menos gastos. Debajo, las mismas cuatro filas acumulan desde enero hasta ese mes, y diciembre coincide con las tarjetas del panel. Un apunte sin fecha no entra en ningún mes. Los meses cerrados se suman al panel. Los meses abiertos se listan como pendientes de cerrar, con los pedidos de venta de esos meses.</p>
+
+  <h2 id="arbol">Árbol analítico</h2>
+  <p>El árbol guarda los cuatro primeros niveles del orden configurado. El orden inicial es canal, delegación, departamento y proyecto. La sección es el quinto nivel y no entra en este árbol.</p>
+  <p>La venta de cada grupo sigue el pedido de <code>CabeceraPedidoCliente</code> y sus códigos <code>CodigoCanal</code>, <code>IdDelegacion</code>, <code>CodigoDepartamento</code> y <code>CodigoProyecto</code>. El gasto y el ingreso siguen la fila de <code>AnaMovimientos</code>. Cada fila suma su <code>ImporteAsiento</code> en los niveles que ya trae. El margen de cada grupo es sus ingresos menos sus gastos.</p>
+  <p>Si la fila trae canal, delegación y departamento y deja <code>CodigoProyecto</code> vacío, toma el proyecto del único pedido de venta o de compra con esos tres códigos. Si hay varios o ninguno, queda sin proyecto. Un apunte sin ninguno de esos niveles se queda en las tarjetas del panel y no baja al árbol. Un pedido que no cierra margen se muestra fuera del árbol, con su precio de venta y sin margen.</p>
+  <p>El importe de ingresos de un grupo <strong>Sin dato</strong> abre los apuntes de <code>Movimientos</code> que cayeron en esa rama: fecha, asiento, cuenta, número de factura e importe. El número sale del comentario <code>Ntra.Fra.Num.</code>. Esas líneas se guardan al pulsar Actualizar. La página no vuelve a leer el origen.</p>
+  <p>Los nombres de canal, delegación, departamento, proyecto y sección salen de <code>CanalesEmpresa</code>, <code>Delegaciones</code>, <code>Departamentos</code>, <code>Proyectos</code> y <code>Secciones</code>, siempre de la misma empresa.</p>
+
+  <h2 id="ficha">Ficha del proyecto</h2>
+  <p>El proyecto es el <code>CodigoProyecto</code> de <code>CabeceraPedidoCliente</code>. La ficha empieza en <code>FechaPedido</code> y sigue por todos los meses de su vida, aunque el albarán o el asiento caigan en otro ejercicio. La cabecera muestra esa fecha y el cliente. El nombre del cliente sale de <code>Clientes</code>.</p>
+  <table class="table table-sm">
+    <thead>
+      <tr><th>Dato de la ficha</th><th>Tabla de SQL Server</th><th>Cómo se obtiene</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Pedido</td>
+        <td><code>CabeceraPedidoCliente</code></td>
+        <td><code>BaseImponible</code> de la cabecera. La progresión compara lo albaranado con esa base.</td>
+      </tr>
+      <tr>
+        <td>Albaranes de venta</td>
+        <td><code>CabeceraAlbaranCliente</code> y <code>LineasAlbaranCliente</code></td>
+        <td>Los del mismo <code>CodigoProyecto</code>, con cualquier <code>FechaAlbaran</code>. <code>StatusFacturado</code> igual a −1 es facturado y 0 es no facturado. <code>StatusAbono</code> igual a −1 resta.</td>
+      </tr>
+      <tr>
+        <td>Pedidos y albaranes de compra</td>
+        <td><code>CabeceraPedidoProveedor</code> y <code>CabeceraAlbaranProveedor</code></td>
+        <td>El pedido sin albarán queda como comprometido. El albarán comercial se muestra y no se resta del margen.</td>
+      </tr>
+      <tr>
+        <td>Gastos</td>
+        <td><code>AnaMovimientos</code>, <code>Movimientos</code> y <code>PlanCuentas</code></td>
+        <td>Filas del proyecto en cuentas de gasto. El grupo 60 entra aquí. El cierre de ejercicio no entra.</td>
+      </tr>
+      <tr>
+        <td>Analítica de costes</td>
+        <td><code>AnaMovimientos</code></td>
+        <td>Cada fila suma su importe en su <code>CodigoDepartamento</code> y su <code>CodigoSeccion</code>. El pedido y los albaranes no entran en esa tabla.</td>
+      </tr>
+      <tr>
+        <td>Margen neto</td>
+        <td>Albaranes de venta y gastos</td>
+        <td>Lo albaranado menos los gastos. La desviación es lo albaranado menos el pedido.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>El desglose se guarda al pulsar Actualizar. Abrir la ficha no vuelve a leer SQL Server.</p>
+
+  <h2 id="mes">Resumen del mes</h2>
+  <p>Esta pantalla muestra las mismas tarjetas que el cuadro de mando, con las cifras de un solo mes. No lista los proyectos ni dibuja el gráfico del año.</p>
+  <h3>Tarjetas comerciales</h3>
+  <table class="table table-sm">
+    <thead>
+      <tr><th>Tarjeta</th><th>Tabla de SQL Server</th><th>Qué fecha la sitúa en el mes</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Pedidos de venta</td>
+        <td><code>CabeceraPedidoCliente</code></td>
+        <td><code>FechaPedido</code> de ese mes. Un pedido sin fecha no entra en ningún mes.</td>
+      </tr>
+      <tr>
+        <td>Albaranes de venta</td>
+        <td><code>CabeceraAlbaranCliente</code></td>
+        <td><code>FechaAlbaran</code> de ese mes, aunque el pedido sea de otro. Un albarán de marzo de un pedido de febrero entra en marzo.</td>
+      </tr>
+      <tr>
+        <td>Pedidos de compra</td>
+        <td><code>CabeceraPedidoProveedor</code></td>
+        <td><code>FechaPedido</code> de ese mes.</td>
+      </tr>
+      <tr>
+        <td>Albaranes de compra</td>
+        <td><code>CabeceraAlbaranProveedor</code></td>
+        <td><code>FechaAlbaran</code> de ese mes, aunque el pedido de compra sea de otro.</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>Tarjetas del libro</h3>
+  <p>Ingresos, compras, gastos y margen de un mes son la columna de ese mes en el cuadro. Si el mes está cerrado, se muestran las cifras guardadas y no se lee el origen. Si está abierto, al entrar se vuelven a leer los pedidos, albaranes y apuntes con fecha en ese mes. Pulsar el importe de ingresos, compras o gastos abre el mismo detalle que en el cuadro.</p>
+  <p>Debajo de las tarjetas está la evolución de ese mes, con la gráfica oculta al entrar. El acumulado hasta el mes se ve en el cuadro, no aquí. Pulsar el importe de pedidos o albaranes abre los documentos del mes. Pulsar el número abre las líneas guardadas en <code>LineasPedidoCliente</code>, <code>LineasPedidoProveedor</code>, <code>LineasAlbaranCliente</code> o <code>LineasAlbaranProveedor</code>. Si todavía no se guardaron, la ventana lo dice. El margen no abre documentos.</p>
+  <p>El buscador de ficha es el del cuadro. El árbol muestra los ingresos de <code>Movimientos</code> ya guardados con fecha de ese mes y con canal, delegación, departamento o proyecto. Un apunte sin esos niveles no entra. Las ventas y los gastos del árbol no se parten por mes: el resumen guardado no tiene su fecha junto al nivel.</p>
+  <table class="table table-sm">
+    <thead>
+      <tr><th>Tarjeta</th><th>Tabla de SQL Server</th><th>Qué fecha la sitúa en el mes</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Ingresos</td>
+        <td><code>Movimientos</code></td>
+        <td><code>FechaAsiento</code> de ese mes. Cuenta del grupo 7. El importe es el abono menos el cargo.</td>
+      </tr>
+      <tr>
+        <td>Compras</td>
+        <td><code>AnaMovimientos</code> unida a <code>Movimientos</code></td>
+        <td><code>FechaAsiento</code> de ese mes. Solo cuentas que empiezan por 60 y están guardadas en un proyecto.</td>
+      </tr>
+      <tr>
+        <td>Gastos</td>
+        <td><code>Movimientos</code></td>
+        <td>El grupo 6 de ese mes menos las compras. Una cuenta que no empieza por 6 no entra.</td>
+      </tr>
+      <tr>
+        <td>Margen</td>
+        <td>Las tres filas anteriores</td>
+        <td>Grupo 7 menos el grupo 6. El porcentaje va sobre los ingresos.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 id="margen">Margen de pedidos</h2>
+  <p>Cada fila es un pedido de <code>CabeceraPedidoCliente</code> del ejercicio, identificado por ejercicio, serie y número. El precio de venta es su <code>BaseImponible</code>. El proyecto es su <code>CodigoProyecto</code>.</p>
+  <p>El coste y los ingresos salen de <code>Movimientos</code> y <code>PlanCuentas</code> cuando ese <code>CodigoProyecto</code> corresponde a un único pedido no anulado de la empresa. El coste es el gasto de esas cuentas. Los ingresos son el abono menos el cargo de las cuentas de ingreso. El margen de la fila es esos ingresos menos el coste. El porcentaje va sobre los ingresos.</p>
+  <p>Si el pedido no tiene <code>CodigoProyecto</code>, si el proyecto no tiene pedido vigente o si varios pedidos vigentes comparten el mismo código, el caso queda pendiente de revisión. Esas ventas se muestran fuera del margen cerrado, con su precio y sin margen, y no se suman a los niveles del árbol.</p>
+
+  <h2 id="nombres">Nombres y acceso</h2>
+  <p>El selector de empresa lee <code>Empresas</code>. Cada persona solo ve las empresas que tiene asignadas. El nombre del cliente sale de <code>Clientes</code> (<code>RazonSocial</code> o <code>Nombre</code>) y el del proveedor, de <code>Proveedores</code>.</p>
+  <p>El perfil decide qué grupos se ven: pedidos de venta, pedidos de compra, albaranes de venta, albaranes de compra y movimientos contables. También puede ocultar canal, delegación, departamento, proyecto o sección en el árbol. La página de margen de pedidos pide a la vez pedidos de venta, pedidos de compra y movimientos contables.</p>
+  <p>Recordar el acceso no guarda la contraseña. El enlace de recuperación dura 60 minutos y sirve una vez. La sesión mantenida dura 30 días.</p>
+</article>
+{% endblock %}

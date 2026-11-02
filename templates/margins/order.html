@@ -4,26 +4,29 @@
   <h1>Margen de pedidos</h1>
   {% include "includes/filters.html" %}
   {% if sample %}
-    <p class="notice">Datos de ejemplo. El origen SQL Server no está configurado.</p>
+    <p class="alert alert-warning">Datos de ejemplo. El origen SQL Server no está configurado.</p>
   {% elif erp_name %}
-    <p class="notice">Origen comercial {{ erp_name }}.</p>
+    <p class="alert alert-warning">Origen comercial {{ erp_name }}.</p>
   {% endif %}
   {% if missing_company %}
-    <p class="error">No hay una empresa asignada. Sin empresas, no hay cifras económicas.</p>
+    <p class="alert alert-danger">No hay una empresa asignada. Sin empresas, no hay cifras económicas.</p>
   {% elif forbidden %}
-    <p class="error">El perfil no puede consultar pedidos, compras y movimientos de la empresa {{ company }}.</p>
+    <p class="alert alert-danger">El perfil no puede consultar pedidos, compras y movimientos de la empresa {{ company }}.</p>
   {% else %}
-    <p>Empresa {{ company }}. Pedidos del {{ year }}. Los ingresos contables van al lado y no modifican el margen.</p>
-    <table>
+    {% if pending_refresh %}
+      <p class="alert alert-warning">No hay resumen para este ejercicio. Pulse Actualizar para calcularlo.</p>
+    {% else %}
+    <p>Empresa {{ company }}. Pedidos del {{ year }}. El margen es los ingresos menos los gastos.</p>
+    <table class="table table-sm table-hover">
       <thead>
         <tr>
           <th>Pedido</th>
           <th>Proyecto</th>
-          <th>Precio de venta</th>
-          <th>Coste</th>
-          <th>Margen</th>
-          <th>Porcentaje</th>
-          <th>Ingresos contables</th>
+          <th class="amount">Precio de venta</th>
+          <th class="amount">Coste</th>
+          <th class="amount">Margen</th>
+          <th class="amount">%</th>
+          <th class="amount">Ingresos</th>
           <th>Estado del cálculo</th>
         </tr>
       </thead>
@@ -32,11 +35,11 @@
           <tr>
             <td>{{ row.identity }}</td>
             <td>{{ row.project }}</td>
-            <td>{{ row.price }}</td>
-            <td>{{ row.cost }}</td>
-            <td>{{ row.margin }}</td>
-            <td>{{ row.percent }}</td>
-            <td>{{ row.income }}</td>
+            <td class="amount">{{ row.price }}</td>
+            <td class="amount">{{ row.cost }}</td>
+            <td class="amount">{{ row.margin }}</td>
+            <td class="amount">{{ row.percent }}</td>
+            <td class="amount">{{ row.income }}</td>
             <td>{% if row.incomplete %}Incompleto{% else %}Cerrado{% endif %}</td>
           </tr>
         {% empty %}
@@ -46,6 +49,7 @@
     </table>
     {% if pending_count %}
       <p>{{ pending_count }} pedidos quedan fuera de un margen cerrado porque no tienen proyecto o lo comparten.</p>
+    {% endif %}
     {% endif %}
   {% endif %}
 {% endblock %}

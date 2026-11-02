@@ -1,0 +1,24 @@
+<div class="month-rows" aria-label="Albaranado, compras, gastos y margen acumulados por mes">
+  {% for month in chart_months %}
+    <section class="month-row">
+      <h3>{{ month.label }}</h3>
+      <ul>
+        {% for bar in month.series %}
+          <li>
+            <span class="month-name">{{ bar.name }}</span>
+            <span class="bar-track{% if bar.negative %} neg{% endif %}">
+              {% if bar.negative %}
+                {% if bar.width %}<span class="bar {{ bar.tone }}" style="width: {{ bar.width }}%"></span>{% endif %}
+                <i class="axis"></i>
+              {% else %}
+                <i class="axis"></i>
+                {% if bar.width %}<span class="bar {{ bar.tone }}" style="width: {{ bar.width }}%"></span>{% endif %}
+              {% endif %}
+            </span>
+            <strong>{{ bar.amount }}</strong>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endfor %}
+</div>

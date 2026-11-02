@@ -6,10 +6,10 @@
     <form method="post">
       {% csrf_token %}
       {{ form.as_p }}
-      <button type="submit">Guardar</button>
+      <button class="btn btn-primary" type="submit">Guardar</button>
     </form>
   {% else %}
-    <p class="error">El enlace no sirve. Puede pedir uno nuevo.</p>
+    <p class="alert alert-danger">El enlace no sirve. Puede pedir uno nuevo.</p>
     <p><a href="{% url 'password-recover' %}">Pedir un enlace nuevo</a></p>
   {% endif %}
 {% endblock %}

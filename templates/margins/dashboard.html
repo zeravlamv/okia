@@ -2,63 +2,138 @@
 {% load static %}
 {% block title %}Cuadro de mando · OKIA{% endblock %}
 {% block content %}
-  <h1>Cuadro de mando</h1>
-  {% include "includes/filters.html" %}
-  {% if sample %}
-    <p class="notice">Datos de ejemplo. El origen SQL Server no está configurado.</p>
-  {% elif erp_name %}
-    <p class="notice">Origen comercial {{ erp_name }}.</p>
-  {% endif %}
-  <p>Empresa {{ company }}. Ejercicio {{ year }}.</p>
-  <section class="cards">
-    {% if sales %}
-      <article>
-        <h2>Pedidos de venta</h2>
-        <p>{{ sales.count }} pedidos</p>
-        <p>{{ sales.amount }}</p>
-      </article>
+  <div class="board">
+    <h1>Cuadro de mando</h1>
+    {% include "includes/filters.html" %}
+    <section class="finder" aria-label="Ficha de proyecto">
+      <h2>Ficha de proyecto</h2>
+      <p class="fiche-kicker">Escribe el código o el nombre y abre su ficha.</p>
+      <form class="row g-2 align-items-end" id="project-finder" action="#" method="get">
+        <div class="col-md-8 col-lg-6">
+          <label class="form-label mb-1" for="project-query">Proyecto</label>
+          <input class="form-control" id="project-query" type="search" placeholder="Código o nombre" autocomplete="off">
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-primary" type="submit">Ver ficha</button>
+        </div>
+      </form>
+      <ul id="project-matches" class="finder-matches" hidden></ul>
+    </section>
+    {% if sample %}
+      <p class="alert alert-warning">Datos de ejemplo. El origen SQL Server no está configurado.</p>
+    {% elif erp_name %}
+      <p class="alert alert-warning">Origen comercial {{ erp_name }}.</p>
     {% endif %}
-    {% if purchases %}
-      <article>
-        <h2>Pedidos de compra</h2>
-        <p>{{ purchases.count }} compras con fecha en el ejercicio</p>
-        <p>{{ purchases.amount }}</p>
-      </article>
+    <p class="board-meta">Empresa {{ company }}. Ejercicio {{ year }}.</p>
+    {% if pending_months %}
+      <p class="board-meta">Pendiente de cerrar:
+        {% for month in pending_months %}{{ month.name }} {{ month.count }} pedidos {{ month.amount }}{% if not forloop.last %} · {% endif %}{% endfor %}
+      </p>
     {% endif %}
-    {% if show_margin %}
-      <article>
-        <h2>Margen</h2>
-        <p>{{ margin }}</p>
-        <p>Suma de los pedidos con proyecto único. El coste incluye todo el proyecto.</p>
-      </article>
+    {% if pending_refresh %}
+      <p class="alert alert-warning">No hay resumen para este ejercicio. Pulse Actualizar para calcularlo.</p>
+    {% else %}
+    <section class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-3 cards">
+      {% if sales %}
+        <div class="col">
+          <article class="card venta">
+            <div class="card-body">
+              <h2>Pedidos de venta</h2>
+              <p class="kpi-count">{{ sales.count }} pedidos</p>
+              <p class="kpi-amount">{{ sales.amount }}</p>
+            </div>
+          </article>
+        </div>
+      {% endif %}
+      {% if purchase_orders %}
+        <div class="col">
+          <article class="card compra">
+            <div class="card-body">
+              <h2>Pedidos de compra</h2>
+              <p class="kpi-count">{{ purchase_orders.count }} pedidos</p>
+              <p class="kpi-amount">{{ purchase_orders.amount }}</p>
+            </div>
+          </article>
+        </div>
+      {% endif %}
+      {% if sales_deliveries %}
+        <div class="col">
+          <article class="card venta">
+            <div class="card-body">
+              <h2>Albaranes de venta</h2>
+              <p class="kpi-count">{{ sales_deliveries.count }} albaranes</p>
+              <p class="kpi-amount">{{ sales_deliveries.amount }}</p>
+            </div>
+          </article>
+        </div>
+      {% endif %}
+      {% if purchase_deliveries %}
+        <div class="col">
+          <article class="card compra">
+            <div class="card-body">
+              <h2>Albaranes de compra</h2>
+              <p class="kpi-count">{{ purchase_deliveries.count }} albaranes</p>
+              <p class="kpi-amount">{{ purchase_deliveries.amount }}</p>
+            </div>
+          </article>
+        </div>
+      {% endif %}
+      {% if income %}
+        <div class="col">
+          <article class="card ingreso">
+            <div class="card-body">
+              <h2>Ingresos</h2>
+              <p class="kpi-count">{{ income.count }} movimientos</p>
+              <p class="kpi-amount">{{ income.amount }}</p>
+            </div>
+          </article>
+        </div>
+      {% endif %}
+      {% if accounted_purchases %}
+        <div class="col">
+          <article class="card gasto">
+            <div class="card-body">
+              <h2>Compras</h2>
+              <p class="kpi-count">{{ accounted_purchases.count }} apuntes</p>
+              <p class="kpi-amount">{{ accounted_purchases.amount }}</p>
+            </div>
+          </article>
+        </div>
+      {% endif %}
+      {% if expenses %}
+        <div class="col">
+          <article class="card resto">
+            <div class="card-body">
+              <h2>Gastos</h2>
+              <p class="kpi-amount">{{ expenses.amount }}</p>
+            </div>
+          </article>
+        </div>
+      {% endif %}
+      {% if show_margin %}
+        <div class="col">
+          <article class="card margen">
+            <div class="card-body">
+              <h2>Margen</h2>
+              <p class="kpi-amount">{{ margin }}</p>
+              <p class="kpi-count">{{ margin_percent }}</p>
+              <p class="kpi-count">Grupo 7 menos el grupo 6.</p>
+            </div>
+          </article>
+        </div>
+      {% endif %}
+    </section>
+    {% include "includes/evolution.html" with evolution_months=months show_cumulative=months embed_dialogs=months %}
     {% endif %}
-    {% if show_income %}
-      <article>
-        <h2>Ingresos contables</h2>
-        <p>{{ income }}</p>
-        <p>Van aparte y no modifican el margen.</p>
-      </article>
-    {% endif %}
-    {% if clientes is not None %}
-      <article>
-        <h2>Clientes</h2>
-        <p>{{ clientes }}</p>
-      </article>
-    {% endif %}
-    {% if proveedores is not None %}
-      <article>
-        <h2>Proveedores</h2>
-        <p>{{ proveedores }}</p>
-      </article>
-    {% endif %}
-    {% if articulos is not None %}
-      <article>
-        <h2>Artículos</h2>
-        <p>{{ articulos }}</p>
-      </article>
-    {% endif %}
-  </section>
-  <div id="breakdown"></div>
-  {{ breakdown|json_script:"breakdown-data" }}
-  <script src="{% static 'js/breakdown.js' %}"></script>
+    <div id="hierarchy" data-income-url="{% url 'tree-income' %}"></div>
+    <dialog id="tree-income" aria-labelledby="tree-income-title">
+      <button type="button" class="detail-close" data-close-tree>Cerrar</button>
+      <h2 id="tree-income-title">Ingresos</h2>
+      <p class="detail-source" id="tree-income-source"></p>
+      <div class="evolution-scroll" id="tree-income-body"></div>
+      <p class="detail-total" id="tree-income-total"></p>
+    </dialog>
+    {{ hierarchy|json_script:"hierarchy-data" }}
+    <script src="{% static 'js/breakdown.js' %}?v=5"></script>
+  </div>
 {% endblock %}

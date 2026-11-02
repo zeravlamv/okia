@@ -15,6 +15,8 @@ class InformationGroup(models.TextChoices):
     SECCIONES = "secciones", "Secciones"
     PEDIDOS_VENTA = "pedidos_venta", "Pedidos de venta"
     PEDIDOS_COMPRA = "pedidos_compra", "Pedidos de compra"
+    ALBARANES_VENTA = "albaranes_venta", "Albaranes de venta"
+    ALBARANES_COMPRA = "albaranes_compra", "Albaranes de compra"
     MOVIMIENTOS = "movimientos", "Movimientos contables"
     PLAN_CUENTAS = "plan_cuentas", "Plan de cuentas"
 

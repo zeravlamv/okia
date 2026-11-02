@@ -2,7 +2,8 @@ from decimal import Decimal
 
 from apps.access.models import AnalyticalLevel, InformationGroup
 from apps.erp.mapping import is_cancelled
-from apps.margins.services import build_report, in_period, sale_price
+from apps.margins.hierarchy import FIGURES, build_hierarchy
+from apps.margins.services import in_period, ledger_total, margin_ratio, sale_price
 
 _LEVELS = {
     AnalyticalLevel.Level.CANAL: ("Canal", InformationGroup.CANALES),
@@ -20,6 +21,13 @@ _DEFAULT_ORDER = (
 )
 
 
+def level_group(title):
+    for name, group in _LEVELS.values():
+        if name == title:
+            return group
+    return None
+
+
 def analytical_dimensions():
     """El árbol analítico guardado fija el orden. Si falta algún nivel, se usa el orden inicial."""
 
@@ -31,14 +39,6 @@ def analytical_dimensions():
     if len(stored) != len(_DEFAULT_ORDER) or len(set(stored)) != len(_DEFAULT_ORDER):
         stored = list(_DEFAULT_ORDER)
     return tuple((code, *_LEVELS[code]) for code in stored)
-
-
-def _sum(values):
-    total = Decimal("0")
-    for value in values:
-        if value is not None:
-            total += Decimal(value)
-    return total
 
 
 def _active_orders(company, year, orders):
@@ -60,96 +60,90 @@ def _prices(orders):
     return total
 
 
-def period_purchases(company, year, purchases):
-    """El número y el importe son las compras fechadas en el ejercicio.
+def _documents_value(company, year, documents):
+    """Número e importe sin impuestos. Manda la base de la cabecera."""
 
-    No son el coste del pedido: una compra de otro año sigue en el margen.
-    """
-
-    amount = Decimal("0")
-    documents = set()
-    for line in purchases:
-        if line.codigo_empresa != company or line.line_date is None:
-            continue
-        if line.line_date.year != year:
-            continue
-        if line.amount is None:
-            continue
-        amount += Decimal(line.amount)
-        if line.numero:
-            documents.add((line.ejercicio, line.serie, line.numero))
-        else:
-            documents.add(("linea", id(line)))
-    return {"count": len(documents), "amount": amount}
+    active = [
+        document
+        for document in documents
+        if document.codigo_empresa == company
+        and in_period(document, year)
+        and not is_cancelled(document.status)
+    ]
+    return {"count": len(active), "amount": _prices(active)}
 
 
-def _code(value):
-    if value is None:
-        return ""
-    return str(value).strip()
+def _visible_figures(allowed):
+    keys = []
+    if InformationGroup.PEDIDOS_VENTA in allowed:
+        keys.append("sales")
+    if InformationGroup.MOVIMIENTOS in allowed:
+        keys.append("income")
+        keys.append("expenses")
+        keys.append("margin")
+    return [key for key in FIGURES if key in keys]
 
 
-def _display(code, names):
-    if not code:
-        return "Sin dato"
-    description = _code(names.get(code))
-    if not description or description == code:
-        return code
-    return f"{code} — {description}"
+def _strip(nodes, keys):
+    visible = []
+    for node in nodes:
+        item = {
+            "level": node["level"],
+            "label": node["label"],
+            "incomplete": node["incomplete"],
+            "children": _strip(node["children"], keys),
+        }
+        for key in keys:
+            item[key] = node[key]
+        visible.append(item)
+    return visible
 
 
-def _breakdown(orders, labels):
-    sections = []
-    for attribute, title, _group in analytical_dimensions():
-        names = labels.get(attribute, {})
-        grouped = {}
-        for order in orders:
-            price, _incomplete = sale_price(order)
-            if price is None:
-                continue
-            code = _code(getattr(order, attribute, ""))
-            grouped[code] = grouped.get(code, Decimal("0")) + price
-        if not grouped:
-            continue
-        rows = [
-            {"label": _display(code, names), "amount": amount}
-            for code, amount in grouped.items()
-        ]
-        rows.sort(key=lambda row: row["label"].casefold())
-        sections.append({"title": title, "group": _group, "rows": rows})
-    return sections
-
-
-def build_dashboard(company, year, orders, purchases, movements, masters, groups, labels=None):
+def build_dashboard(
+    company,
+    year,
+    orders,
+    purchases,
+    movements,
+    groups,
+    labels=None,
+    purchase_orders=None,
+    sales_deliveries=None,
+    purchase_deliveries=None,
+    ledger=None,
+):
     """Un grupo no permitido no ocupa un hueco con valor cero."""
 
     allowed = set(groups)
     active = _active_orders(company, year, orders)
-    report = build_report(company, year, orders, purchases, movements)
+    dimensions = [item for item in analytical_dimensions() if item[2] in allowed][:4]
+    tree = build_hierarchy(
+        company,
+        year,
+        orders,
+        purchases,
+        movements,
+        labels or {},
+        dimensions,
+        purchase_orders=purchase_orders,
+    )
     result = {}
+    if dimensions:
+        result["hierarchy"] = _strip(tree["nodes"], _visible_figures(allowed))
+    if InformationGroup.PEDIDOS_VENTA in allowed and tree["aside"]:
+        result["aside"] = tree["aside"]
     if InformationGroup.PEDIDOS_VENTA in allowed:
         result["sales"] = {"count": len(active), "amount": _prices(active)}
-        result["breakdown"] = [
-            section
-            for section in _breakdown(active, labels or {})
-            if section["group"] in allowed
-        ]
-    if InformationGroup.PEDIDOS_COMPRA in allowed:
-        result["purchases"] = period_purchases(company, year, purchases)
-    margin_groups = {
-        InformationGroup.PEDIDOS_VENTA,
-        InformationGroup.PEDIDOS_COMPRA,
-        InformationGroup.MOVIMIENTOS,
-    }
-    if margin_groups.issubset(allowed):
-        result["margin"] = _sum(row["margin"] for row in report["closed"])
-    if {InformationGroup.PEDIDOS_VENTA, InformationGroup.MOVIMIENTOS}.issubset(allowed):
-        result["income"] = _sum(row["income"] for row in report["closed"])
-    for key, group in (
-        ("clientes", InformationGroup.CLIENTES),
-        ("proveedores", InformationGroup.PROVEEDORES),
-        ("articulos", InformationGroup.ARTICULOS),
-    ):
-        if group in allowed:
-            result[key] = masters.get(key, 0)
+    if purchase_orders is not None and InformationGroup.PEDIDOS_COMPRA in allowed:
+        result["purchase_orders"] = _documents_value(company, year, purchase_orders)
+    if sales_deliveries is not None and InformationGroup.ALBARANES_VENTA in allowed:
+        result["sales_deliveries"] = _documents_value(company, year, sales_deliveries)
+    if purchase_deliveries is not None and InformationGroup.ALBARANES_COMPRA in allowed:
+        result["purchase_deliveries"] = _documents_value(company, year, purchase_deliveries)
+    if InformationGroup.MOVIMIENTOS in allowed:
+        source = movements if ledger is None else ledger
+        result["income"] = ledger_total(company, year, source, "income")
+        result["expenses"] = ledger_total(company, year, source, "expense")
+        result["margin"] = result["income"]["amount"] - result["expenses"]["amount"]
+        result["margin_percent"] = margin_ratio(result["income"]["amount"], result["margin"])
     return result

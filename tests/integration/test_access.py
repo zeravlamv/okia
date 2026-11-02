@@ -148,16 +148,31 @@ def test_several_companies_hide_figures_until_one_is_chosen_and_switch_clears_th
     body = entered.content.decode()
     assert "No hay cifras hasta elegir una empresa." in body
     assert "650,00 EUR" not in body
-    assert "9999,00 EUR" not in body
+    assert "9.999,00 EUR" not in body
     first = client.post("/empresas/", {"codigo_empresa": "1"}, follow=True)
     first_body = first.content.decode()
     assert "Cuadro de mando" in first_body
-    assert "1190,00 EUR" in first_body
-    assert "9999,00 EUR" not in first_body
+    assert "1.190,00 EUR" not in first_body
+    refreshed = client.post(
+        "/actualizar/",
+        {"codigo_empresa": "1", "ejercicio": "2026", "next": "/"},
+        follow=True,
+    )
+    refreshed_body = refreshed.content.decode()
+    assert "1.190,00 EUR" in refreshed_body
+    assert "9.999,00 EUR" not in refreshed_body
     second = client.post("/empresas/", {"codigo_empresa": "2"}, follow=True)
     second_body = second.content.decode()
-    assert "9999,00 EUR" in second_body
-    assert "1190,00 EUR" not in second_body
+    assert "9.999,00 EUR" not in second_body
+    assert "1.190,00 EUR" not in second_body
+    other = client.post(
+        "/actualizar/",
+        {"codigo_empresa": "2", "ejercicio": "2026", "next": "/"},
+        follow=True,
+    )
+    other_body = other.content.decode()
+    assert "9.999,00 EUR" in other_body
+    assert "1.190,00 EUR" not in other_body
 
 
 @pytest.mark.django_db
@@ -166,7 +181,12 @@ def test_one_company_is_selected_and_none_asks_for_an_administrator():
     alone = Client()
     page = _enter(alone, "sola", "Clave-inicial-2026", follow=True)
     assert "Cuadro de mando" in page.content.decode()
-    assert "1190,00 EUR" in page.content.decode()
+    refreshed = alone.post(
+        "/actualizar/",
+        {"codigo_empresa": "1", "ejercicio": "2026", "next": "/"},
+        follow=True,
+    )
+    assert "1.190,00 EUR" in refreshed.content.decode()
     _person("vacia", "Clave-inicial-2026", companies=())
     empty = Client()
     waiting = _enter(empty, "vacia", "Clave-inicial-2026", follow=True)

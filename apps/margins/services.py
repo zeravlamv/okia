@@ -1,6 +1,13 @@
 from decimal import Decimal
 
-from apps.erp.mapping import indicates_hours, is_cancelled, is_income_account
+from apps.erp.mapping import (
+    indicates_hours,
+    is_cancelled,
+    is_closing_entry,
+    is_cost_account,
+    is_expense_account,
+    is_income_account,
+)
 
 # Las reglas de cálculo están en negocio.md.
 
@@ -36,8 +43,8 @@ def _side_amount(left, right, left_minus_right):
     return amount, False
 
 
-def project_cost(company, project, purchases, movements):
-    """Si la misma hora está en los dos sitios, entran las dos."""
+def project_purchases(company, project, purchases):
+    """Las compras de un pedido cerrado son la suma de las bases de todas sus líneas de compra, con cualquier fecha."""
 
     total = Decimal("0")
     incomplete = False
@@ -48,8 +55,18 @@ def project_cost(company, project, purchases, movements):
             incomplete = True
             continue
         total += Decimal(purchase.amount)
+    return total, incomplete
+
+
+def project_expenses(company, project, movements):
+    """Los gastos son los apuntes de horas, mano de obra o personal de ese proyecto."""
+
+    total = Decimal("0")
+    incomplete = False
     for movement in movements:
         if movement.codigo_empresa != company or movement.project != project:
+            continue
+        if is_income_account(movement.account_code, movement.account_name):
             continue
         if not indicates_hours(movement.account_name):
             continue
@@ -61,8 +78,37 @@ def project_cost(company, project, purchases, movements):
     return total, incomplete
 
 
+def project_cost(company, project, purchases, movements):
+    """El coste son las compras contables y los gastos de ese proyecto. La línea de compra no se suma."""
+
+    del purchases
+    total = Decimal("0")
+    incomplete = False
+    for movement in movements:
+        if movement.codigo_empresa != company or movement.project != project:
+            continue
+        if is_closing_entry(getattr(movement, "comment", "")):
+            continue
+        if not is_cost_account(movement.account_code, movement.account_name):
+            continue
+        amount, missing = _side_amount(movement.debit, movement.credit, True)
+        if missing:
+            incomplete = True
+            continue
+        total += amount
+    return total, incomplete
+
+
+def margin_ratio(income, margin):
+    """El porcentaje es el margen sobre los ingresos. Sin ingresos, no aplica."""
+
+    if income is None or margin is None or Decimal(income) == 0:
+        return None
+    return Decimal(margin) / Decimal(income) * Decimal("100")
+
+
 def project_income(company, project, movements):
-    """No se suma ni se resta al precio, al coste ni al margen."""
+    """El margen del pedido es estos ingresos menos los gastos. No se mezcla con el precio."""
 
     total = Decimal("0")
     incomplete = False
@@ -81,12 +127,67 @@ def project_income(company, project, movements):
     return total, incomplete or not found and False
 
 
-def in_period(order, year):
-    """El periodo elige el pedido. No recorta el coste ni los ingresos por la fecha de la imputación."""
+def in_period(document, year):
+    """El periodo elige el documento por su fecha. Si no tiene fecha, entra por el ejercicio.
 
-    if order.order_date is not None:
-        return order.order_date.year == year
-    return order.ejercicio == year
+    No recorta el coste ni los ingresos del proyecto.
+    """
+
+    moment = getattr(document, "order_date", None)
+    if moment is None:
+        moment = getattr(document, "document_date", None)
+    if moment is not None:
+        return moment.year == year
+    return document.ejercicio == year
+
+
+def movement_in_period(movement, year):
+    """La fecha del apunte manda. Si no tiene fecha, manda el ejercicio."""
+
+    if movement.movement_date is not None:
+        return movement.movement_date.year == year
+    if movement.ejercicio is None:
+        return False
+    return int(movement.ejercicio) == year
+
+
+def tree_movement(movement):
+    """En el árbol, el gasto sigue siendo el apunte de horas y el ingreso la cuenta de ingreso."""
+
+    if is_closing_entry(getattr(movement, "comment", "")):
+        return None, None, False
+    if is_income_account(movement.account_code, movement.account_name):
+        amount, missing = _side_amount(movement.credit, movement.debit, True)
+        return "income", amount, missing
+    if indicates_hours(movement.account_name):
+        amount, missing = _side_amount(movement.debit, movement.credit, True)
+        return "expenses", amount, missing
+    return None, None, False
+
+
+def ledger_total(company, year, movements, kind):
+    """Cada movimiento del ejercicio entra una vez. El reparto analítico no lo duplica."""
+
+    total = Decimal("0")
+    count = 0
+    for movement in movements:
+        if movement.codigo_empresa != company or not movement_in_period(movement, year):
+            continue
+        if is_closing_entry(getattr(movement, "comment", "")):
+            continue
+        if kind == "income":
+            if not is_income_account(movement.account_code, movement.account_name):
+                continue
+            amount, missing = _side_amount(movement.credit, movement.debit, True)
+        else:
+            if not is_expense_account(movement.account_code, movement.account_name):
+                continue
+            amount, missing = _side_amount(movement.debit, movement.credit, True)
+        if missing:
+            continue
+        total += amount
+        count += 1
+    return {"count": count, "amount": total}
 
 
 def _by_project(rows, company):
@@ -135,10 +236,8 @@ def build_report(company, year, orders, purchases, movements):
             company, project, movements_by_project.get(project, [])
         )
         incomplete = price_incomplete or cost_incomplete or income_incomplete
-        margin = None if price is None else price - cost
-        percent = None
-        if price not in (None, Decimal("0")) and margin is not None:
-            percent = margin / price * Decimal("100")
+        margin = None if income is None else income - cost
+        percent = margin_ratio(income, margin)
         closed.append(
             {
                 "ejercicio": order.ejercicio,

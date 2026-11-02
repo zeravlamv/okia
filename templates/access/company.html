@@ -3,11 +3,11 @@
 {% block content %}
   <h1>Empresa</h1>
   {% if empty %}
-    <p class="error">Solicite una empresa a quien administra. Sin empresas, no hay cifras económicas.</p>
+    <p class="alert alert-danger">Solicite una empresa a quien administra. Sin empresas, no hay cifras económicas.</p>
   {% else %}
     <p>No hay cifras hasta elegir una empresa.</p>
     {% if error %}
-      <p class="error">{{ error }}</p>
+      <p class="alert alert-danger">{{ error }}</p>
     {% endif %}
     <form method="post">
       {% csrf_token %}
@@ -19,7 +19,7 @@
           </label>
         </p>
       {% endfor %}
-      <button type="submit">Elegir</button>
+      <button class="btn btn-primary" type="submit">Elegir</button>
     </form>
   {% endif %}
 {% endblock %}

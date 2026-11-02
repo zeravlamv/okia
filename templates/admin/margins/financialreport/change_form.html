@@ -1,0 +1,8 @@
+{% extends "admin/change_form.html" %}
+
+{% block submit_buttons_bottom %}
+  {{ block.super }}
+  {% if original %}
+    <input type="submit" name="_renumber" value="Renumerar de 10 en 10">
+  {% endif %}
+{% endblock %}

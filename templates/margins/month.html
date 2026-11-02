@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Resumen mes · OKIA{% endblock %}
+{% block content %}
+  <div class="board">
+    <h1>Resumen de {{ month_name }} de {{ year }}</h1>
+    {% if refresh_open %}
+      <div id="month-refresh" hidden data-url="{% url 'refresh-month' %}" data-month="{{ month }}" data-name="{{ month_name }}"></div>
+    {% endif %}
+    {% include "includes/filters.html" %}
+    <section class="finder" aria-label="Ficha de proyecto">
+      <h2>Ficha de proyecto</h2>
+      <p class="fiche-kicker">Escribe el código o el nombre y abre su ficha.</p>
+      <form class="row g-2 align-items-end" id="project-finder" action="#" method="get">
+        <div class="col-md-8 col-lg-6">
+          <label class="form-label mb-1" for="project-query">Proyecto</label>
+          <input class="form-control" id="project-query" type="search" placeholder="Código o nombre" autocomplete="off">
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-primary" type="submit">Ver ficha</button>
+        </div>
+      </form>
+      <ul id="project-matches" class="finder-matches" hidden></ul>
+    </section>
+    <nav class="month-switch" aria-label="Meses del ejercicio">
+      {% for item in months %}
+        <a href="?mes={{ item.number }}" {% if item.selected %}aria-current="page"{% endif %}>{{ item.name }}</a>
+      {% endfor %}
+    </nav>
+    <p class="board-meta">Empresa {{ company }}. Ejercicio {{ year }}.</p>
+    {% if closed %}
+      <p class="alert alert-warning">Este mes está cerrado. Las cifras son las de la última ficha guardada.</p>
+    {% elif refresh_open %}
+      <p class="alert alert-info">Este mes está abierto. Se están recalculando sus cifras.</p>
+    {% else %}
+      <p class="alert alert-info">Este mes está abierto.</p>
+    {% endif %}
+    {% if empty %}
+      <p class="alert alert-warning">No hay proyectos calculados en este mes. Pulse Actualizar para calcularlos.</p>
+    {% else %}
+      <section class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-3 cards" aria-label="Indicadores del mes" data-documents-url="{% url 'month-documents' %}" data-lines-url="{% url 'evolution-lines' %}">
+        {% if sales %}
+          <div class="col">
+            <article class="card venta">
+              <div class="card-body">
+                <h2>Pedidos de venta</h2>
+                <p class="kpi-count">{{ sales.count }} pedidos</p>
+                <p class="kpi-amount">{% if sales.link %}<button type="button" class="amount-link" data-kind="pedido" data-month="{{ month }}">{{ sales.amount }}</button>{% else %}{{ sales.amount }}{% endif %}</p>
+              </div>
+            </article>
+          </div>
+        {% endif %}
+        {% if purchase_orders %}
+          <div class="col">
+            <article class="card compra">
+              <div class="card-body">
+                <h2>Pedidos de compra</h2>
+                <p class="kpi-count">{{ purchase_orders.count }} pedidos</p>
+                <p class="kpi-amount">{% if purchase_orders.link %}<button type="button" class="amount-link" data-kind="pedido_compra" data-month="{{ month }}">{{ purchase_orders.amount }}</button>{% else %}{{ purchase_orders.amount }}{% endif %}</p>
+              </div>
+            </article>
+          </div>
+        {% endif %}
+        {% if sales_deliveries %}
+          <div class="col">
+            <article class="card venta">
+              <div class="card-body">
+                <h2>Albaranes de venta</h2>
+                <p class="kpi-count">{{ sales_deliveries.count }} albaranes</p>
+                <p class="kpi-amount">{% if sales_deliveries.link %}<button type="button" class="amount-link" data-kind="albaran" data-month="{{ month }}">{{ sales_deliveries.amount }}</button>{% else %}{{ sales_deliveries.amount }}{% endif %}</p>
+              </div>
+            </article>
+          </div>
+        {% endif %}
+        {% if purchase_deliveries %}
+          <div class="col">
+            <article class="card compra">
+              <div class="card-body">
+                <h2>Albaranes de compra</h2>
+                <p class="kpi-count">{{ purchase_deliveries.count }} albaranes</p>
+                <p class="kpi-amount">{% if purchase_deliveries.link %}<button type="button" class="amount-link" data-kind="albaran_compra" data-month="{{ month }}">{{ purchase_deliveries.amount }}</button>{% else %}{{ purchase_deliveries.amount }}{% endif %}</p>
+              </div>
+            </article>
+          </div>
+        {% endif %}
+        {% if income %}
+          <div class="col">
+            <article class="card ingreso">
+              <div class="card-body">
+                <h2>Ingresos</h2>
+                <p class="kpi-count">{{ income.count }} movimientos</p>
+                <p class="kpi-amount">{% if income.link %}<button type="button" class="amount-link" data-kind="ingreso" data-month="{{ month }}">{{ income.amount }}</button>{% else %}{{ income.amount }}{% endif %}</p>
+              </div>
+            </article>
+          </div>
+        {% endif %}
+        {% if accounted_purchases %}
+          <div class="col">
+            <article class="card gasto">
+              <div class="card-body">
+                <h2>Compras</h2>
+                <p class="kpi-count">{{ accounted_purchases.count }} apuntes</p>
+                <p class="kpi-amount">{% if accounted_purchases.link %}<button type="button" class="amount-link" data-kind="compra" data-month="{{ month }}">{{ accounted_purchases.amount }}</button>{% else %}{{ accounted_purchases.amount }}{% endif %}</p>
+              </div>
+            </article>
+          </div>
+        {% endif %}
+        {% if expenses %}
+          <div class="col">
+            <article class="card resto">
+              <div class="card-body">
+                <h2>Gastos</h2>
+                <p class="kpi-amount">{% if expenses.link %}<button type="button" class="amount-link" data-kind="gasto" data-month="{{ month }}">{{ expenses.amount }}</button>{% else %}{{ expenses.amount }}{% endif %}</p>
+              </div>
+            </article>
+          </div>
+        {% endif %}
+        {% if show_margin %}
+          <div class="col">
+            <article class="card margen">
+              <div class="card-body">
+                <h2>Margen</h2>
+                <p class="kpi-amount">{{ margin }}</p>
+                <p class="kpi-count">{{ margin_percent }}</p>
+                <p class="kpi-count">Grupo 7 menos el grupo 6.</p>
+              </div>
+            </article>
+          </div>
+        {% endif %}
+      </section>
+    {% endif %}
+    <dialog id="amount-detail" aria-labelledby="amount-detail-title">
+      <button type="button" class="detail-close" data-close-detail>Cerrar</button>
+      <h2 id="amount-detail-title">Detalle</h2>
+      <p class="detail-source" id="amount-detail-source"></p>
+      <div class="evolution-scroll" id="amount-detail-body"></div>
+      <p class="detail-total" id="amount-detail-total"></p>
+    </dialog>
+    <dialog id="line-detail" aria-labelledby="line-detail-title">
+      <button type="button" class="detail-close" data-close-lines>Cerrar</button>
+      <h2 id="line-detail-title">Líneas</h2>
+      <p class="detail-source" id="line-detail-note"></p>
+      <div class="evolution-scroll">
+        <table class="table table-sm evolution-values" id="line-detail-table"></table>
+      </div>
+      <p class="detail-total" id="line-detail-total"></p>
+    </dialog>
+    {% include "includes/evolution.html" with evolution_months=evolution_months %}
+    <script>
+      (function () {
+        var root = document.querySelector("[data-documents-url]");
+        var dialog = document.getElementById("amount-detail");
+        var lineDialog = document.getElementById("line-detail");
+        if (!root || !dialog || !lineDialog) return;
+        var detailTitle = document.getElementById("amount-detail-title");
+        var detailSource = document.getElementById("amount-detail-source");
+        var detailBody = document.getElementById("amount-detail-body");
+        var detailTotal = document.getElementById("amount-detail-total");
+        var commercial = { pedido: true, pedido_compra: true, albaran: true, albaran_compra: true };
+        function tableFrom(headers, rows) {
+          var table = document.createElement("table");
+          table.className = "table table-sm evolution-values";
+          var headRow = document.createElement("tr");
+          headers.forEach(function (header) {
+            var cell = document.createElement("th");
+            cell.textContent = header;
+            headRow.appendChild(cell);
+          });
+          var thead = document.createElement("thead");
+          thead.appendChild(headRow);
+          var tbody = document.createElement("tbody");
+          rows.forEach(function (row) {
+            var line = document.createElement("tr");
+            var values = row.cells || row;
+            values.forEach(function (value, column) {
+              var cell = document.createElement("td");
+              if (column === 2 && row.document) {
+                var button = document.createElement("button");
+                button.type = "button";
+                button.className = "amount-link";
+                button.setAttribute("data-kind", "lineas");
+                button.setAttribute("data-project", row.project || "");
+                button.setAttribute("data-document", row.document);
+                button.setAttribute("data-line-kind", row.lineKind || "");
+                button.textContent = value;
+                cell.appendChild(button);
+              } else {
+                cell.textContent = value;
+              }
+              line.appendChild(cell);
+            });
+            tbody.appendChild(line);
+          });
+          table.appendChild(thead);
+          table.appendChild(tbody);
+          return table;
+        }
+        function openLines(project, documentKey, lineKind) {
+          var url = root.getAttribute("data-lines-url")
+            + "?proyecto=" + encodeURIComponent(project)
+            + "&albaran=" + encodeURIComponent(documentKey)
+            + "&tipo=" + encodeURIComponent(lineKind || "");
+          fetch(url, { headers: { "Accept": "application/json" } }).then(function (response) {
+            if (!response.ok) throw new Error("lineas");
+            return response.json();
+          }).then(function (payload) {
+            document.getElementById("line-detail-title").textContent = payload.title || "Líneas";
+            document.getElementById("line-detail-note").textContent = payload.message || (payload.source ? "Origen: " + payload.source : "");
+            var table = document.getElementById("line-detail-table");
+            table.replaceChildren();
+            if (payload.rows && payload.rows.length) {
+              var built = tableFrom(payload.headers, payload.rows);
+              table.appendChild(built.querySelector("thead"));
+              table.appendChild(built.querySelector("tbody"));
+            }
+            document.getElementById("line-detail-total").textContent = payload.total ? "Total " + payload.total : "";
+            lineDialog.showModal();
+          }).catch(function () {
+            document.getElementById("line-detail-title").textContent = "Líneas";
+            document.getElementById("line-detail-note").textContent = "No se han podido abrir las líneas.";
+            document.getElementById("line-detail-table").replaceChildren();
+            document.getElementById("line-detail-total").textContent = "";
+            lineDialog.showModal();
+          });
+        }
+        document.addEventListener("click", function (event) {
+          var target = event.target.closest("[data-kind]");
+          if (!target) return;
+          var kind = target.getAttribute("data-kind");
+          if (kind === "lineas") {
+            if (document.querySelector(".evolution-block")) return;
+            openLines(target.getAttribute("data-project"), target.getAttribute("data-document"), target.getAttribute("data-line-kind"));
+            return;
+          }
+          if (!commercial[kind]) return;
+          var month = target.getAttribute("data-month");
+          if (!month) return;
+          fetch(root.getAttribute("data-documents-url") + "?mes=" + month + "&tipo=" + encodeURIComponent(kind), { headers: { "Accept": "application/json" } })
+            .then(function (response) { if (!response.ok) throw new Error("detalle"); return response.json(); })
+            .then(function (payload) {
+              detailTitle.textContent = payload.title || "Detalle";
+              detailSource.textContent = payload.source ? "Origen: " + payload.source : "";
+              detailBody.replaceChildren();
+              if (!payload.rows || !payload.rows.length) {
+                var empty = document.createElement("p");
+                empty.textContent = "No hay documentos en este mes.";
+                detailBody.appendChild(empty);
+                detailTotal.textContent = "";
+              } else {
+                detailBody.appendChild(tableFrom(payload.headers, payload.rows));
+                detailTotal.textContent = "Total " + payload.total;
+              }
+              dialog.showModal();
+            })
+            .catch(function () {
+              detailTitle.textContent = "Detalle";
+              detailSource.textContent = "No se ha podido abrir el detalle.";
+              detailBody.replaceChildren();
+              detailTotal.textContent = "";
+              dialog.showModal();
+            });
+        });
+        dialog.querySelector("[data-close-detail]").addEventListener("click", function () { dialog.close(); });
+        lineDialog.querySelector("[data-close-lines]").addEventListener("click", function () { lineDialog.close(); });
+        dialog.addEventListener("click", function (event) { if (event.target === dialog) dialog.close(); });
+        lineDialog.addEventListener("click", function (event) { if (event.target === lineDialog) lineDialog.close(); });
+      }());
+    </script>
+    <div id="hierarchy" data-income-url="{% url 'tree-income' %}" data-income-month="{{ month }}"></div>
+    <dialog id="tree-income" aria-labelledby="tree-income-title">
+      <button type="button" class="detail-close" data-close-tree>Cerrar</button>
+      <h2 id="tree-income-title">Detalle</h2>
+      <p class="detail-source" id="tree-income-source"></p>
+      <div class="evolution-scroll" id="tree-income-body"></div>
+      <p class="detail-total" id="tree-income-total"></p>
+    </dialog>
+    {{ hierarchy|json_script:"hierarchy-data" }}
+    <script src="{% static 'js/breakdown.js' %}?v=5"></script>
+  </div>
+{% endblock %}

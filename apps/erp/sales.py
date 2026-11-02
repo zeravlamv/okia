@@ -2,7 +2,7 @@ from datetime import datetime
 
 from django.conf import settings
 
-from apps.erp.mapping import read_table
+from apps.erp.mapping import list_columns, month_window, read_table, resolve
 from apps.erp.sample import SaleLine, SaleOrder, for_company, orders
 
 ORDER_STATUS = {
@@ -34,9 +34,45 @@ def _project(value):
     return text or None
 
 
-def fetch_orders(codigo_empresa):
+def _in_month(moment, year, month):
+    return moment is not None and moment.year == int(year) and moment.month == int(month)
+
+
+def _header_span(table, year, month):
+    column = resolve(list_columns(table), "date")
+    start, end = month_window(year, month)
+    return f"[{column}] >= ? AND [{column}] < ?", (start, end)
+
+
+def _lines_in_span(line_table, header_table, year, month):
+    header_columns = list_columns(header_table)
+    line_columns = list_columns(line_table)
+    links = []
+    for logical in ("company", "exercise", "series", "number"):
+        links.append(
+            f"h.[{resolve(header_columns, logical)}] = [{line_table}].[{resolve(line_columns, logical)}]"
+        )
+    start, end = month_window(year, month)
+    date_column = resolve(header_columns, "date")
+    where = (
+        f"EXISTS (SELECT 1 FROM [{header_table}] h WHERE "
+        + " AND ".join(links)
+        + f" AND h.[{date_column}] >= ? AND h.[{date_column}] < ?)"
+    )
+    return where, (start, end)
+
+
+def fetch_orders(codigo_empresa, year=None, month=None):
     if settings.SAMPLE_ERP:
-        return for_company(orders(), codigo_empresa)
+        rows = for_company(orders(), codigo_empresa)
+        if year is None or month is None:
+            return rows
+        return [row for row in rows if _in_month(row.order_date, year, month)]
+    header_where, header_params = ("", ())
+    line_where, line_params = ("", ())
+    if year is not None and month is not None:
+        header_where, header_params = _header_span("CabeceraPedidoCliente", year, month)
+        line_where, line_params = _lines_in_span("LineasPedidoCliente", "CabeceraPedidoCliente", year, month)
     headers = read_table(
         "CabeceraPedidoCliente",
         [
@@ -56,11 +92,15 @@ def fetch_orders(codigo_empresa):
             "section",
         ],
         company=codigo_empresa,
+        extra_where=header_where,
+        extra_params=header_params,
     )
     lines = read_table(
         "LineasPedidoCliente",
         ["company", "exercise", "series", "number", "article", "base"],
         company=codigo_empresa,
+        extra_where=line_where,
+        extra_params=line_params,
     )
     grouped = {}
     for row in lines:

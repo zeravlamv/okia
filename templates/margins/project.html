@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+{% block title %}Proyecto {{ project_code }} · OKIA{% endblock %}
+{% block content %}
+  <div class="fiche">
+    <div class="fiche-heading">
+      <h1>Proyecto {{ project_code }}</h1>
+      {% if life and life.customer %}<p class="fiche-customer">{{ life.customer }}</p>{% endif %}
+    </div>
+    {% include "includes/filters.html" %}
+    {% if pending_refresh %}
+      <p class="alert alert-warning">No hay ficha de este proyecto. Pulse Actualizar para calcularla.</p>
+    {% else %}
+      <p class="fiche-meta">
+        {% if life.show_order and life.start %}Pedido del {{ life.start }}{% endif %}
+        {% if life.years %}{% if life.show_order and life.start %} · {% endif %}Ejercicios {{ life.years }}{% endif %}
+        {% if life.incomplete %}<span class="incomplete">Incompleto</span>{% endif %}
+      </p>
+
+      <section class="fiche-hero">
+        <div class="donut">
+          <svg viewBox="0 0 220 220" role="img" aria-label="Pedido, compras, gastos y margen">
+            <circle cx="110" cy="110" r="78" fill="none" stroke="#d5d5d2" stroke-width="34"></circle>
+            {% for slice in life.donut %}
+              <circle cx="110" cy="110" r="78" fill="none" stroke="{{ slice.color }}" stroke-width="34" stroke-dasharray="{{ slice.length }} {{ slice.rest }}" stroke-dashoffset="{{ slice.offset }}" transform="rotate(-90 110 110)"></circle>
+            {% endfor %}
+          </svg>
+          <div class="donut-center">
+            <span>Pedido</span>
+            <strong>{{ life.order_base }}</strong>
+          </div>
+        </div>
+        <div class="donut-side">
+          <ul class="donut-legend">
+            {% for slice in life.donut %}
+              <li>
+                <i style="background: {{ slice.color }}"></i>
+                <span class="donut-name">{{ slice.label }}</span>
+                <strong>{{ slice.amount }}</strong>
+                <span class="pct">{{ slice.percent }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+          {% if life.negative_margin %}
+            <p class="donut-negative">Margen {{ life.negative_margin }}. No entra en el gráfico.</p>
+          {% endif %}
+        </div>
+      </section>
+
+      {% if life.show_order %}
+        <details class="fiche-fold venta">
+          <summary>
+            <span>Pedido de venta</span>
+            <span class="fiche-fold-figures">
+              <strong>{{ life.order_base }}</strong>
+              {% if life.show_sale_pending %}<small>Pendiente de albaranar {{ life.pending }}</small>{% endif %}
+              {% if life.show_deviation %}<small>Desviación {{ life.deviation }}</small>{% endif %}
+            </span>
+          </summary>
+          <div class="fiche-fold-body">
+            {% include "includes/fiche_documents.html" with documents=life.sale_orders lines_stored=life.lines_stored %}
+          </div>
+        </details>
+      {% endif %}
+
+      {% if life.show_deliveries %}
+        <details class="fiche-fold venta">
+          <summary>
+            <span>Albaranes de venta</span>
+            <span class="fiche-fold-figures">
+              <strong>{{ life.delivered }}</strong>
+              <small>Pendiente de facturar {{ life.open }}</small>
+            </span>
+          </summary>
+          <div class="fiche-fold-body">
+            {% include "includes/fiche_documents.html" with documents=life.sale_deliveries lines_stored=life.lines_stored %}
+          </div>
+        </details>
+      {% endif %}
+
+      {% if life.show_committed and life.purchase_orders %}
+        <details class="fiche-fold compra">
+          <summary>
+            <span>Pedidos de compra</span>
+            <span class="fiche-fold-figures">
+              <strong>{{ life.order_total }}</strong>
+              {% if life.show_purchase_pending %}<small>Pendiente de albaranar {{ life.purchase_pending }}</small>{% endif %}
+            </span>
+          </summary>
+          <div class="fiche-fold-body">
+            <p class="fiche-note">Solo pedidos. No entran en el coste.</p>
+            {% include "includes/fiche_documents.html" with documents=life.purchase_orders lines_stored=life.lines_stored %}
+          </div>
+        </details>
+      {% endif %}
+
+      {% if life.show_purchases %}
+        <details class="fiche-fold compra">
+          <summary>
+            <span>Albaranes de compra</span>
+            <span class="fiche-fold-figures">
+              <strong>{{ life.purchases }}</strong>
+              <small>Pendiente de facturar {{ life.purchase_invoice_pending }}</small>
+            </span>
+          </summary>
+          <div class="fiche-fold-body">
+            {% include "includes/fiche_documents.html" with documents=life.purchase_deliveries lines_stored=life.lines_stored %}
+          </div>
+        </details>
+      {% endif %}
+
+      {% if life.show_expenses %}
+        <details class="fiche-fold">
+          <summary><span>Analítica costes</span><strong>{{ life.cost }}</strong></summary>
+          <div class="fiche-fold-body">
+            {% if not life.levels_stored %}
+              <p class="alert alert-warning">El desglose se calcula al pulsar Actualizar.</p>
+            {% elif life.slices %}
+              <div class="fiche-scroll">
+                <table class="table table-sm table-hover fiche-table mb-0">
+                  <thead>
+                    <tr>
+                      <th>Departamento</th>
+                      <th>Sección</th>
+                      <th class="num">Gastos</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in life.slices %}
+                      <tr>
+                        <td class="text">{{ row.department }}</td>
+                        <td class="text">{{ row.section }}</td>
+                        <td class="num">{{ row.expenses }}</td>
+                      </tr>
+                      {% if row.origins %}
+                        <tr>
+                          <td colspan="3">
+                            <table class="table table-sm fiche-table origin-table mb-0">
+                              <thead>
+                                <tr>
+                                  <th>Fecha</th>
+                                  <th>Origen</th>
+                                  <th class="num">Importe</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {% for origin in row.origins %}
+                                  <tr>
+                                    <td>{{ origin.date }}</td>
+                                    <td class="text">{{ origin.origin }}</td>
+                                    <td class="num">{{ origin.amount }}</td>
+                                  </tr>
+                                {% endfor %}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      {% endif %}
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <p class="fiche-note">No hay coste en AnaMovimientos.</p>
+            {% endif %}
+          </div>
+        </details>
+      {% endif %}
+
+      {% if life.months and life.show_deliveries or life.months and life.show_purchases or life.months and life.show_expenses %}
+        <details class="fiche-fold">
+          <summary><span>Mes a mes</span></summary>
+          <div class="fiche-fold-body">
+            <div class="fiche-scroll">
+              <table class="table table-sm table-hover fiche-table mb-0">
+                <thead>
+                  <tr>
+                    <th>Mes</th>
+                    {% if life.show_deliveries %}
+                      <th class="num">Albaranado</th>
+                      <th class="num">Facturado</th>
+                      <th class="num">No facturado</th>
+                      <th class="num">%</th>
+                    {% endif %}
+                    {% if life.show_expenses %}<th class="num">Gastos</th>{% endif %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for month in life.months %}
+                    <tr>
+                      <td>{{ month.label }}</td>
+                      {% if life.show_deliveries %}
+                        <td class="num">{{ month.cumulative }}</td>
+                        <td class="num">{{ month.invoiced }}</td>
+                        <td class="num">{{ month.open }}</td>
+                        <td class="num">{{ month.percent }}</td>
+                      {% endif %}
+                      {% if life.show_expenses %}<td class="num">{{ month.expenses }}</td>{% endif %}
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+      {% endif %}
+
+      {% if life.start or life.marks %}
+        <details class="fiche-fold">
+          <summary><span>Evolución proyecto</span></summary>
+          <div class="fiche-fold-body">
+            {% if life.evolution %}
+              {% include "includes/fiche_month_chart.html" with chart_months=life.evolution %}
+            {% endif %}
+            {% if life.start %}
+              <div class="timeline">
+                <div class="timeline-scale">
+                  <span>{{ life.start }}</span>
+                  <span>{{ life.end }}</span>
+                </div>
+                <div class="timeline-track" role="img" aria-label="Del {{ life.start }} al {{ life.end }}"></div>
+              </div>
+            {% endif %}
+            {% if life.marks %}
+              <div class="fiche-scroll">
+                <table class="table table-sm table-hover fiche-table mb-0">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Origen</th>
+                      <th>Detalle</th>
+                      <th class="num">Importe</th>
+                      {% if life.show_deliveries %}<th class="num">%</th>{% endif %}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for mark in life.marks %}
+                      <tr>
+                        <td class="num">{{ mark.date }}</td>
+                        <td>
+                          {% if mark.kind == "venta" %}
+                            <span class="tag tag-venta">Venta</span>
+                          {% else %}
+                            <span class="tag tag-compra">Compra</span>
+                          {% endif %}
+                        </td>
+                        <td class="text">{{ mark.detail }}</td>
+                        <td class="num">{{ mark.amount }}</td>
+                        {% if life.show_deliveries %}<td class="num">{{ mark.percent }}</td>{% endif %}
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% endif %}
+          </div>
+        </details>
+      {% endif %}
+
+      {% if life.undated %}
+        <details class="fiche-fold">
+          <summary><span>Sin fecha</span></summary>
+          <div class="fiche-fold-body">
+            <ul class="fiche-quiet">
+              {% for item in life.undated %}
+                <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        </details>
+      {% endif %}
+    {% endif %}
+  </div>
+{% endblock %}

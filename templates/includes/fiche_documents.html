@@ -1,0 +1,28 @@
+{% for doc in documents %}
+  <details class="fiche-doc">
+    <summary>
+      <span class="fiche-doc-id">{{ doc.date }} {{ doc.identity }}</span>
+      <span class="fiche-doc-party">{{ doc.party }}</span>
+      <strong class="fiche-doc-amount">{{ doc.amount }}</strong>
+      {% if doc.status %}<span class="tag{% if doc.status == 'Comprometido' %}{% else %} tag-compra{% endif %}">{{ doc.status }}</span>{% endif %}
+    </summary>
+    {% if not lines_stored %}
+      <p class="fiche-note">Las líneas se calculan al pulsar Actualizar.</p>
+    {% elif doc.lines %}
+      <table class="table table-sm fiche-table mb-0">
+        <tbody>
+          {% for line in doc.lines %}
+            <tr>
+              <td>{{ line.description }}</td>
+              <td class="num">{{ line.amount }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="fiche-note">Este documento no tiene líneas.</p>
+    {% endif %}
+  </details>
+{% empty %}
+  <p class="fiche-note">No hay documentos.</p>
+{% endfor %}

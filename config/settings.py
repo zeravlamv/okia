@@ -72,9 +72,14 @@ TEMPLATES = [
 ]
 
 def _sqlite():
+    # WAL permite leer la ficha mientras Actualizar escribe. Un bloqueo breve espera 20 segundos.
     return {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
+        "OPTIONS": {
+            "timeout": 20,
+            "init_command": "PRAGMA journal_mode=WAL",
+        },
     }
 
 

@@ -1,21 +1,179 @@
-<form class="filters" method="post" action="{% url 'apply-filters' %}">
+{% if messages %}
+  {% for message in messages %}
+    <p class="alert alert-info">{{ message }}</p>
+  {% endfor %}
+{% endif %}
+<form class="filters row g-3 align-items-end mb-3" method="post" action="{% url 'apply-filters' %}">
   {% csrf_token %}
   <input type="hidden" name="next" value="{{ request.path }}">
-  <label>
-    Empresa
-    <select name="codigo_empresa">
-      {% for code, label in company_options %}
-        <option value="{{ code }}" {% if code == company %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Ejercicio
-    <select name="ejercicio">
-      {% for option in year_options %}
-        <option value="{{ option }}" {% if option == year %}selected{% endif %}>{{ option }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <button type="submit">Aplicar</button>
+  <div class="col-sm-auto">
+    <label class="form-label mb-1">
+      Empresa
+      <select class="form-select" name="codigo_empresa">
+        {% for code, label in company_options %}
+          <option value="{{ code }}" {% if code == company %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <div class="col-sm-auto">
+    <label class="form-label mb-1">
+      Ejercicio
+      <select class="form-select" name="ejercicio">
+        {% for option in year_options %}
+          <option value="{{ option }}" {% if option == year %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <div class="col-sm-auto">
+    <button class="btn btn-primary" type="submit">Aplicar</button>
+  </div>
+  <div class="col-sm-auto">
+    <button class="btn btn-outline-primary" type="submit" formaction="{% url 'refresh-dashboard' %}">Actualizar</button>
+  </div>
+  {% if updated_at %}
+    <span class="updated-at align-self-end">Actualizado el {{ updated_at }}</span>
+  {% endif %}
 </form>
+<div id="refresh-progress" class="refresh-progress" hidden>
+  <div class="refresh-card card border-top border-3 border-primary shadow-sm" role="dialog" aria-modal="true" aria-labelledby="refresh-title">
+    <div class="card-body">
+    <h2 id="refresh-title">Actualizando</h2>
+    <p id="refresh-label" role="status">Preparando</p>
+    <progress class="w-100" id="refresh-bar" max="8" value="0"></progress>
+    <p id="refresh-detail" class="refresh-detail"></p>
+    <p class="refresh-hint">No cierres esta página.</p>
+    <p id="refresh-error" class="alert alert-danger mt-3" hidden></p>
+    </div>
+  </div>
+</div>
+<script>
+  (function () {
+    var button = document.querySelector(".filters button[formaction]");
+    var form = document.querySelector("form.filters");
+    var panel = document.getElementById("refresh-progress");
+    if (!button || !form || !panel) {
+      return;
+    }
+    var title = document.getElementById("refresh-title");
+    var label = document.getElementById("refresh-label");
+    var bar = document.getElementById("refresh-bar");
+    var detail = document.getElementById("refresh-detail");
+    var error = document.getElementById("refresh-error");
+    var running = false;
+
+    function showError() {
+      running = false;
+      button.disabled = false;
+      error.hidden = false;
+      error.textContent = "No se ha podido actualizar.";
+    }
+
+    function applyLine(line) {
+      if (!line.trim()) {
+        return;
+      }
+      var event = JSON.parse(line);
+      if (event.ok === false) {
+        throw new Error(event.error || "bad");
+      }
+      if (event.total) {
+        bar.max = event.total;
+      }
+      if (event.label) {
+        label.textContent = event.label;
+      }
+      if (event.month) {
+        var yearField = form.querySelector("[name=ejercicio]");
+        var year = yearField ? yearField.value : "";
+        title.textContent = year ? "Actualizando " + event.month + " de " + year : "Actualizando " + event.month;
+      }
+      if (event.count) {
+        detail.textContent = Number(event.done).toLocaleString("es-ES") + " de " + Number(event.count).toLocaleString("es-ES");
+        bar.value = (event.step - 1) + (event.done / event.count);
+      } else if (event.step) {
+        detail.textContent = "";
+        bar.value = event.step - 1;
+      }
+      if (event.ok === true && event.next) {
+        running = false;
+        bar.value = bar.max;
+        label.textContent = "Listo";
+        if (event.notice) {
+          detail.textContent = event.notice;
+          window.setTimeout(function () { window.location.assign(event.next); }, 1200);
+          return;
+        }
+        window.location.assign(event.next);
+      }
+    }
+
+    function run(url, payload, heading) {
+      if (running) {
+        return;
+      }
+      running = true;
+      button.disabled = true;
+      error.hidden = true;
+      title.textContent = heading;
+      label.textContent = "Preparando";
+      detail.textContent = "";
+      bar.value = 0;
+      panel.hidden = false;
+      fetch(url, {
+        method: "POST",
+        body: payload,
+        headers: { "Accept": "application/x-ndjson" },
+        credentials: "same-origin"
+      }).then(function (response) {
+        if (!response.ok || !response.body) {
+          throw new Error("bad");
+        }
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        var pending = "";
+        function pump() {
+          return reader.read().then(function (chunk) {
+            if (chunk.done) {
+              if (pending.trim()) {
+                applyLine(pending);
+              }
+              if (running) {
+                showError();
+              }
+              return;
+            }
+            pending += decoder.decode(chunk.value, { stream: true });
+            var lines = pending.split("\n");
+            pending = lines.pop();
+            lines.forEach(applyLine);
+            return pump();
+          });
+        }
+        return pump();
+      }).catch(showError);
+    }
+
+    button.addEventListener("click", function (event) {
+      event.preventDefault();
+      var yearField = form.querySelector("[name=ejercicio]");
+      var year = yearField ? yearField.value : "";
+      run(
+        button.getAttribute("formaction"),
+        new FormData(form),
+        year ? "Actualizando el ejercicio " + year : "Actualizando"
+      );
+    });
+
+    var auto = document.getElementById("month-refresh");
+    if (auto) {
+      var month = auto.getAttribute("data-month");
+      var payload = new FormData(form);
+      payload.set("mes", month);
+      payload.set("next", window.location.pathname + "?mes=" + month + "&listo=1");
+      var monthName = auto.getAttribute("data-name") || "";
+      run(auto.getAttribute("data-url"), payload, monthName ? "Actualizando " + monthName : "Actualizando el mes");
+    }
+  })();
+</script>
