@@ -131,16 +131,23 @@ table.fiche-table th.text, table.fiche-table td.text { white-space: nowrap; }
 .evolution .grid.zero { stroke: #b5b5b5; stroke-width: 1; }
 .amount-link { background: none; border: 0; padding: 0; color: #0b4f6c; font: inherit; text-align: left; text-decoration: underline; text-underline-offset: 0.15rem; cursor: pointer; }
 .evolution .bar.venta, .evolution .bar.compra, .evolution .bar.gasto { cursor: pointer; }
-#amount-detail, #line-detail, #tree-income { width: min(58rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); border: 1px solid #e6e6e6; border-radius: 0.5rem; padding: 1.2rem 1.4rem 1.4rem; }
-#amount-detail::backdrop, #line-detail::backdrop, #tree-income::backdrop { background: rgba(28, 28, 28, 0.35); }
-#amount-detail h2, #line-detail h2, #tree-income h2 { margin: 0 2.5rem 0.35rem 0; font-size: 1.15rem; }
+.board-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.board-heading h1 { margin: 0; }
+.heading-alerts { display: inline-flex; align-items: center; gap: 0.5rem; }
+.bell { display: inline-flex; align-items: center; gap: 0.45rem; border: 1px solid #c8c8c8; border-radius: 999px; background: #fff; padding: 0.35rem 0.8rem; cursor: pointer; color: #1c1c1c; }
+.bell svg { width: 1.25rem; height: 1.25rem; fill: currentColor; }
+#amount-detail, #line-detail, #tree-income, #discrepancies, #reviewed { width: min(58rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); border: 1px solid #e6e6e6; border-radius: 0.5rem; padding: 1.2rem 1.4rem 1.4rem; }
+#amount-detail::backdrop, #line-detail::backdrop, #tree-income::backdrop, #discrepancies::backdrop, #reviewed::backdrop { background: rgba(28, 28, 28, 0.35); }
+#amount-detail h2, #line-detail h2, #tree-income h2, #discrepancies h2, #reviewed h2 { margin: 0 2.5rem 0.35rem 0; font-size: 1.15rem; }
+#tree-income h3 { margin: 1rem 0 0.35rem; font-size: 1rem; }
 #amount-detail .detail-source, #line-detail .detail-source, #tree-income .detail-source { margin: 0 0 0.8rem; color: #5c5c5c; }
 #amount-detail .detail-total, #line-detail .detail-total, #tree-income .detail-total { margin: 0.8rem 0 0; font-weight: 700; }
 .expense-tree details { border-bottom: 1px solid #eee; }
 .expense-tree summary { display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0; cursor: pointer; font-variant-numeric: tabular-nums; }
 .expense-tree summary strong { font-weight: 700; }
 .expense-tree table { margin: 0 0 0.6rem; }
-#amount-detail .detail-close, #tree-income .detail-close { float: right; }
+#amount-detail .detail-close, #tree-income .detail-close, #discrepancies .detail-close, #reviewed .detail-close { float: right; }
+.review-status { display: flex; align-items: center; gap: 0.6rem; margin: 0.6rem 0 1rem; }
 .evolution .bar.venta { fill: #0b4f6c; }
 .evolution .bar.compra { fill: var(--gasto); }
 .evolution .bar.gasto { fill: #5e6a75; }

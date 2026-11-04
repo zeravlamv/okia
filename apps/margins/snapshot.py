@@ -9,6 +9,7 @@ from apps.access.models import InformationGroup
 from apps.erp.analytics import fetch_dimension_labels
 from apps.erp.mapping import is_cancelled, is_closing_entry, is_expense_account, is_income_account
 from apps.erp.documents import (
+    fetch_customer_names,
     fetch_purchase_deliveries,
     fetch_purchase_orders,
     fetch_sales_deliveries,
@@ -19,12 +20,21 @@ from apps.erp.sales import fetch_orders
 from apps.margins.dashboard import (
     _documents_value,
     _visible_figures,
-    analytical_dimensions,
     build_dashboard,
     level_group,
+    tree_dimensions,
 )
 from apps.margins.format import format_money
-from apps.margins.hierarchy import _display, _unique_projects, tree_income_entries
+from apps.margins.hierarchy import (
+    TREE_DEPTH,
+    _level_label,
+    _order_code,
+    _unique_projects,
+    customers_by_project,
+    labeled_levels,
+    tree_expense_entries,
+    tree_income_entries,
+)
 from apps.margins.models import (
     MONTH_NAMES,
     AnalyticalSummary,
@@ -33,6 +43,7 @@ from apps.margins.models import (
     BookExpense,
     BookIncome,
     DashboardSnapshot,
+    TreeExpense,
     TreeIncome,
     MonthLedger,
     OrderSummary,
@@ -76,10 +87,26 @@ def _amount(value):
 
 
 def _pad(values):
-    row = list(values[:4])
-    while len(row) < 4:
+    row = list(values[:TREE_DEPTH])
+    while len(row) < TREE_DEPTH:
         row.append("")
     return row
+
+
+def _nivel_map(path, limit=None):
+    mapped = {}
+    for index, value in enumerate(_pad(path), start=1):
+        text = "" if value is None else str(value)
+        mapped[f"nivel_{index}"] = text[:limit] if limit else text
+    return mapped
+
+
+def _stored_path(row):
+    return tuple(getattr(row, f"nivel_{index}") or "" for index in range(1, TREE_DEPTH + 1))
+
+
+def _titulo_map(titles):
+    return {f"titulo_{index}": _pad(titles)[index - 1] for index in range(1, TREE_DEPTH + 1)}
 
 
 def _card(source, prefix):
@@ -140,13 +167,12 @@ def _card_pair(company, year, documents):
 
 
 def _path_labels(order, labels):
-    names = []
-    for attribute, _title, _group in list(analytical_dimensions())[:4]:
-        code = _text(getattr(order, attribute, ""))
-        names.append(_display(code, (labels or {}).get(attribute, {})))
-    while len(names) < 4:
-        names.append("")
-    return names
+    return _pad(
+        [
+            _level_label(attribute, _order_code(order, attribute), labels)
+            for attribute, _title, _group in tree_dimensions()
+        ]
+    )
 
 
 def _share_for(company, year, project, buckets, labels):
@@ -170,7 +196,7 @@ def _share_for(company, year, project, buckets, labels):
     if len(active_orders) == 1:
         price, _missing = sale_price(active_orders[0])
         path_sales = Decimal("0") if price is None else Decimal(price)
-    path = _path_labels(active_orders[0], labels) if active_orders else ["", "", "", ""]
+    path = _path_labels(active_orders[0], labels) if active_orders else _pad([])
     return ProjectExerciseShare(
         codigo_empresa=str(company),
         codigo_proyecto=project,
@@ -187,10 +213,7 @@ def _share_for(company, year, project, buckets, labels):
         income_amount=income["amount"],
         expense_count=expense["count"],
         expense_amount=expense["amount"],
-        nivel_1=path[0],
-        nivel_2=path[1],
-        nivel_3=path[2],
-        nivel_4=path[3],
+        **_nivel_map(path),
         sales=path_sales,
         income=income["amount"],
         purchases=Decimal("0"),
@@ -208,11 +231,11 @@ def _add_card(figures, key, count, amount):
 
 
 def _absorb_share(leaves, share):
-    path = [share.nivel_1, share.nivel_2, share.nivel_3, share.nivel_4]
+    path = list(_stored_path(share))
     if not any(path):
         return
     for found, node in leaves:
-        if list(found) == path:
+        if _pad(found) == _pad(path):
             node["sales"] = _amount(node.get("sales")) + share.sales
             node["income"] = _amount(node.get("income")) + share.income
             node["purchases"] = _amount(node.get("purchases")) + share.purchases
@@ -290,7 +313,7 @@ def _open_only_paths(shares, lives, year, closed):
     path_months = defaultdict(set)
     for share in shares:
         month = _month_of(lives.get(share.codigo_proyecto), year)
-        path = (share.nivel_1, share.nivel_2, share.nivel_3, share.nivel_4)
+        path = _stored_path(share)
         if month is None or not any(path):
             continue
         path_months[path].add(month)
@@ -323,6 +346,7 @@ def refresh_snapshot(company, year, progress=None):
     account_groups = fetch_account_groups(company)
     _tell(progress, 6, "Cuadro de mando")
     labels = fetch_dimension_labels(company)
+    labels["customer"] = fetch_customer_names(company)
     retained = retained_projects(company, year, orders, closed)
     orders_open = _without(orders, retained)
     purchases_open = _without(purchases, retained)
@@ -373,7 +397,7 @@ def refresh_snapshot(company, year, progress=None):
         retained_pending += len(group)
         for order in group:
             kept_identities.add(f"{order.ejercicio} / {order.serie} / {order.numero}")
-    titles = _pad([item[1] for item in list(analytical_dimensions())[:4]])
+    titles = _pad([item[1] for item in tree_dimensions()])
     leaves = _leaves(figures.get("hierarchy", []), [], [])
     with transaction.atomic():
         replace_month_ledgers(company, year, period_movements)
@@ -388,6 +412,16 @@ def refresh_snapshot(company, year, progress=None):
             )
         ) if retained else []
         for share in kept_shares:
+            active = [
+                order
+                for order in buckets["orders"].get(share.codigo_proyecto, [])
+                if not is_cancelled(getattr(order, "status", "")) and in_period(order, year)
+            ]
+            if active:
+                refreshed = _path_labels(active[0], labels)
+                for index, value in enumerate(refreshed, start=1):
+                    setattr(share, f"nivel_{index}", value)
+                share.save(update_fields=[f"nivel_{index}" for index in range(1, TREE_DEPTH + 1)])
             _add_card(figures, "sales", share.sales_count, share.sales_amount)
             _add_card(figures, "purchase_orders", share.purchase_order_count, share.purchase_order_amount)
             _add_card(figures, "sales_deliveries", share.sales_delivery_count, share.sales_delivery_amount)
@@ -422,10 +456,7 @@ def refresh_snapshot(company, year, progress=None):
         snapshot = DashboardSnapshot.objects.create(
             codigo_empresa=company,
             ejercicio=year,
-            titulo_1=titles[0],
-            titulo_2=titles[1],
-            titulo_3=titles[2],
-            titulo_4=titles[3],
+            **_titulo_map(titles),
             pending_count=report["pending_count"] + retained_pending,
             **_card(figures.get("sales"), "sales"),
             **_card(figures.get("purchase_orders"), "purchase_order"),
@@ -438,10 +469,7 @@ def refresh_snapshot(company, year, progress=None):
             [
                 AnalyticalSummary(
                     snapshot=snapshot,
-                    nivel_1=path[0],
-                    nivel_2=path[1],
-                    nivel_3=path[2],
-                    nivel_4=path[3],
+                    **_nivel_map(path),
                     sales=_amount(node.get("sales")),
                     income=_amount(node.get("income")),
                     purchases=_amount(node.get("purchases")),
@@ -479,10 +507,12 @@ def refresh_snapshot(company, year, progress=None):
         replace_book_expenses(company, year, period_movements, open_projects, labels)
         replace_book_incomes(company, year, period_movements, labels)
         replace_tree_incomes(company, year, period_open, orders_open, purchase_orders_open, labels)
+        replace_tree_expenses(company, year, period_open, orders_open, purchase_orders_open, labels)
         snapshot.book_stored = True
         snapshot.income_stored = True
         snapshot.tree_income_stored = True
-        snapshot.save(update_fields=["book_stored", "income_stored", "tree_income_stored"])
+        snapshot.tree_expense_stored = True
+        snapshot.save(update_fields=["book_stored", "income_stored", "tree_income_stored", "tree_expense_stored"])
         OrderSummary.objects.bulk_create(_order_summaries(snapshot, order_rows))
     _tell(progress, 8, "Listo")
     return closed
@@ -937,11 +967,42 @@ def _book_income_detail(company, year, month, names, allowed):
     }
 
 
+def _margin_detail(company, year, month, names):
+    """Ingresos, compras y gastos que forman el margen del mes. No lee el origen."""
+
+    ledger = MonthLedger.objects.filter(codigo_empresa=str(company), ejercicio=year, mes=month).first()
+    if ledger is None:
+        income = Decimal("0")
+        purchases = Decimal("0")
+        expenses = Decimal("0")
+    else:
+        bought, spent = _split_book(company, year, ledger.expense_amount, ledger.expense_count, [month])
+        income = Decimal(ledger.income_amount)
+        purchases = bought["amount"]
+        expenses = spent["amount"]
+    return {
+        "kind": "margen",
+        "title": f"Margen de {names[month]} de {year}",
+        "source": "Grupo 7 menos el grupo 6",
+        "pending": False,
+        "message": "",
+        "headers": ["Concepto", "Importe"],
+        "rows": [
+            ["Ingresos", format_money(income)],
+            ["Compras", format_money(purchases)],
+            ["Gastos", format_money(expenses)],
+        ],
+        "total": format_money(income - purchases - expenses),
+    }
+
+
 def evolution_detail(company, year, month, kind, groups):
-    """Líneas ya guardadas que suman el ingreso, la compra o el gasto de un mes. No lee el origen."""
+    """Líneas ya guardadas que suman el ingreso, la compra, el gasto o el margen de un mes. No lee el origen."""
 
     allowed = set(groups)
     names = dict(MONTH_NAMES)
+    if kind == "margen":
+        return _margin_detail(company, year, month, names)
     if kind == "gasto":
         return _book_expense_detail(company, year, month, names, allowed)
     if kind == "ingreso":
@@ -1070,66 +1131,85 @@ def replace_tree_incomes(company, year, movements, orders, purchase_orders, labe
 
     company = str(company)
     year = int(year)
-    dimensions = list(analytical_dimensions())[:4]
+    dimensions = list(tree_dimensions())
+    customers = customers_by_project(orders or [])
     entries = tree_income_entries(
         company,
         year,
         movements,
         dimensions,
         _unique_projects(orders or [], purchase_orders or []),
+        customers,
     )
-    names = labels or {}
-    rows = []
-    for entry in entries:
-        path = [
-            _display(code, names.get(attribute, {}))
-            for (attribute, _title, _group), code in zip(dimensions, entry["codes"])
-        ]
-        while len(path) < 4:
-            path.append("")
-        rows.append(
-            TreeIncome(
-                codigo_empresa=company,
-                ejercicio=year,
-                movement_date=entry["date"],
-                asiento=entry["asiento"][:20],
-                account_code=entry["account_code"][:20],
-                account_name=entry["account_name"][:120],
-                invoice=entry["invoice"][:40],
-                amount=entry["amount"],
-                nivel_1=path[0][:500],
-                nivel_2=path[1][:500],
-                nivel_3=path[2][:500],
-                nivel_4=path[3][:500],
-            )
-        )
+    rows = _tree_rows(company, year, entries, dimensions, labels, TreeIncome, True)
     TreeIncome.objects.filter(codigo_empresa=company, ejercicio=year).delete()
     TreeIncome.objects.bulk_create(rows, batch_size=500)
 
 
-def store_tree_incomes(company, year):
-    """Lee los apuntes del ejercicio y guarda el ingreso del árbol. No rehace las fichas."""
+def replace_tree_expenses(company, year, movements, orders, purchase_orders, labels):
+    """Sustituye los gastos del árbol. Cada fila guarda el nivel donde cayó."""
 
-    replace_tree_incomes(
+    company = str(company)
+    year = int(year)
+    dimensions = list(tree_dimensions())
+    customers = customers_by_project(orders or [])
+    entries = tree_expense_entries(
         company,
         year,
-        fetch_period_movements(company, year),
-        fetch_orders(company),
-        fetch_purchase_orders(company),
-        fetch_dimension_labels(company),
+        movements,
+        dimensions,
+        _unique_projects(orders or [], purchase_orders or []),
+        customers,
     )
+    rows = _tree_rows(company, year, entries, dimensions, labels, TreeExpense, False)
+    TreeExpense.objects.filter(codigo_empresa=company, ejercicio=year).delete()
+    TreeExpense.objects.bulk_create(rows, batch_size=500)
+
+
+def _tree_rows(company, year, entries, dimensions, labels, model, with_invoice):
+    rows = []
+    for entry in entries:
+        path = labeled_levels(entry["codes"], dimensions, labels)
+        fields = {
+            "codigo_empresa": company,
+            "ejercicio": year,
+            "movement_date": entry["date"],
+            "asiento": entry["asiento"][:20],
+            "account_code": entry["account_code"][:20],
+            "account_name": entry["account_name"][:120],
+            "amount": entry["amount"],
+            **_nivel_map(path, limit=500),
+        }
+        if with_invoice:
+            fields["invoice"] = entry["invoice"][:40]
+        rows.append(model(**fields))
+    return rows
+
+
+def store_tree_incomes(company, year):
+    """Lee los apuntes del ejercicio y guarda el ingreso y el gasto del árbol. No rehace las fichas."""
+
+    movements = fetch_period_movements(company, year)
+    orders = fetch_orders(company)
+    purchase_orders = fetch_purchase_orders(company)
+    labels = fetch_dimension_labels(company)
+    labels["customer"] = fetch_customer_names(company)
+    replace_tree_incomes(company, year, movements, orders, purchase_orders, labels)
+    replace_tree_expenses(company, year, movements, orders, purchase_orders, labels)
     snapshot = DashboardSnapshot.objects.filter(codigo_empresa=str(company), ejercicio=int(year)).first()
     if snapshot is None:
         return
     snapshot.tree_income_stored = True
-    snapshot.save(update_fields=["tree_income_stored"])
+    snapshot.tree_expense_stored = True
+    snapshot.save(update_fields=["tree_income_stored", "tree_expense_stored"])
 
 
 class _IncomePath:
-    """Ingreso ya guardado con los cuatro niveles. No es una fila del año."""
+    """Ingreso ya guardado con los niveles del árbol. No es una fila del año."""
 
     def __init__(self, levels, amount):
-        self.nivel_1, self.nivel_2, self.nivel_3, self.nivel_4 = levels
+        for index, value in enumerate(_pad(levels), start=1):
+            setattr(self, f"nivel_{index}", value)
         self.income = amount
         self.incomplete = False
 
@@ -1146,11 +1226,11 @@ def month_hierarchy(company, year, month, groups):
         or InformationGroup.MOVIMIENTOS not in allowed
     ):
         return {"nodes": [], "projects": projects}
-    titles = [snapshot.titulo_1, snapshot.titulo_2, snapshot.titulo_3, snapshot.titulo_4]
+    titles = _titles_of(snapshot)
     indexes = [index for index, title in enumerate(titles) if title and level_group(title) in allowed]
     rows = [
         _IncomePath(
-            (line.nivel_1, line.nivel_2, line.nivel_3, line.nivel_4),
+            _stored_path(line),
             Decimal(line.amount),
         )
         for line in TreeIncome.objects.filter(
@@ -1169,7 +1249,7 @@ def _finder_projects(snapshot):
 
     if snapshot is None:
         return []
-    titles = [snapshot.titulo_1, snapshot.titulo_2, snapshot.titulo_3, snapshot.titulo_4]
+    titles = _titles_of(snapshot)
     if "Proyecto" not in titles:
         return []
     field = f"nivel_{titles.index('Proyecto') + 1}"
@@ -1182,51 +1262,243 @@ def _finder_projects(snapshot):
     return [{"code": code, "label": found[code]} for code in sorted(found, key=str.casefold)]
 
 
+_PENDING_LINES = "Las líneas se guardan al pulsar Actualizar."
+
+
 def tree_income_detail(company, year, path, month=None):
     """Apuntes de ingreso de una rama del árbol. No lee SQL Server."""
 
-    labels = [item["label"] for item in path]
-    title = "Ingresos de " + " / ".join(labels)
-    headers = ["Fecha", "Asiento", "Cuenta", "Factura", "Importe"]
-    snapshot = DashboardSnapshot.objects.filter(codigo_empresa=str(company), ejercicio=year).first()
-    if snapshot is None or not snapshot.tree_income_stored:
-        return {
-            "title": title,
-            "source": "Movimientos",
-            "pending": True,
-            "message": "Las líneas se guardan al pulsar Actualizar.",
-            "headers": headers,
-            "rows": [],
-            "total": "",
+    detail, _amount = _posting_bundle(
+        company,
+        year,
+        path,
+        month,
+        TreeIncome,
+        "tree_income_stored",
+        "Ingresos de " + _joined(path),
+        ["Fecha", "Asiento", "Cuenta", "Factura", "Importe"],
+        _income_cells,
+    )
+    return detail
+
+
+def tree_expense_detail(company, year, path, month=None):
+    """Apuntes de gasto de una rama del árbol. No lee SQL Server."""
+
+    detail, _amount = _posting_bundle(
+        company,
+        year,
+        path,
+        month,
+        TreeExpense,
+        "tree_expense_stored",
+        "Gastos de " + _joined(path),
+        ["Fecha", "Asiento", "Cuenta", "Importe"],
+        _expense_cells,
+    )
+    return detail
+
+
+def tree_sales_detail(company, year, path, month=None):
+    """Pedidos de venta que suman una rama del árbol. No lee SQL Server."""
+
+    title = "Ventas de " + _joined(path)
+    headers = ["Pedido", "Fecha", "Proyecto", "Importe"]
+    source = "CabeceraPedidoCliente"
+    snapshot = _snapshot_for(company, year)
+    if snapshot is None:
+        return _detail(title, source, headers, True, _PENDING_LINES, [], "")
+    query = ProjectExerciseShare.objects.filter(codigo_empresa=str(company), ejercicio=year).exclude(sales=0)
+    query = _apply_path(query, _titles_of(snapshot), path)
+    if query is None:
+        return None
+    shares = list(query)
+    codes = [share.codigo_proyecto for share in shares]
+    lives = {}
+    identities = {}
+    if codes:
+        lives = {
+            life.codigo_proyecto: life
+            for life in ProjectLife.objects.filter(codigo_empresa=str(company), codigo_proyecto__in=codes)
         }
-    titles = [snapshot.titulo_1, snapshot.titulo_2, snapshot.titulo_3, snapshot.titulo_4]
-    query = TreeIncome.objects.filter(codigo_empresa=str(company), ejercicio=year)
+        identities = {row.project: row.identity for row in snapshot.orders.filter(project__in=codes)}
+    prepared = []
+    for share in shares:
+        life = lives.get(share.codigo_proyecto)
+        moment = life.order_date if life is not None else None
+        if month is not None and (moment is None or moment.year != int(year) or moment.month != int(month)):
+            continue
+        prepared.append((moment, identities.get(share.codigo_proyecto, ""), share))
+    prepared.sort(key=lambda item: (item[0] is None, item[0].isoformat() if item[0] else "", item[1], item[2].codigo_proyecto))
+    rows = []
+    total = Decimal("0")
+    titles = _titles_of(snapshot)
+    for moment, identity, share in prepared:
+        total += Decimal(share.sales)
+        rows.append(
+            [
+                identity or "—",
+                moment.strftime("%d/%m/%Y") if moment else "—",
+                _share_project(share, titles),
+                format_money(share.sales),
+            ]
+        )
+    return _detail(
+        title,
+        source,
+        headers,
+        False,
+        "" if rows else "No hay pedidos en esta rama.",
+        rows,
+        format_money(total) if rows else "",
+    )
+
+
+def tree_margin_detail(company, year, path, month=None):
+    """Ingresos y gastos que forman el margen de una rama. No lee SQL Server."""
+
+    income, income_amount = _posting_bundle(
+        company,
+        year,
+        path,
+        month,
+        TreeIncome,
+        "tree_income_stored",
+        "Ingresos de " + _joined(path),
+        ["Fecha", "Asiento", "Cuenta", "Factura", "Importe"],
+        _income_cells,
+    )
+    expense, expense_amount = _posting_bundle(
+        company,
+        year,
+        path,
+        month,
+        TreeExpense,
+        "tree_expense_stored",
+        "Gastos de " + _joined(path),
+        ["Fecha", "Asiento", "Cuenta", "Importe"],
+        _expense_cells,
+    )
+    if income is None or expense is None:
+        return None
+    total = ""
+    if income_amount is not None and expense_amount is not None:
+        total = format_money(income_amount - expense_amount)
+    return {
+        "title": "Margen de " + _joined(path),
+        "source": "Movimientos",
+        "pending": False,
+        "message": "",
+        "headers": [],
+        "rows": [],
+        "total": total,
+        "sections": [
+            _section("Ingresos", income),
+            _section("Gastos", expense),
+        ],
+    }
+
+
+def tree_origin_detail(company, year, path, kind, month=None):
+    """Origen de una cifra del árbol. No lee SQL Server."""
+
+    if kind == "ventas":
+        return tree_sales_detail(company, year, path, month)
+    if kind == "gastos":
+        return tree_expense_detail(company, year, path, month)
+    if kind == "margen":
+        return tree_margin_detail(company, year, path, month)
+    return tree_income_detail(company, year, path, month)
+
+
+def _joined(path):
+    return " / ".join(item["label"] for item in path)
+
+
+def _snapshot_for(company, year):
+    return DashboardSnapshot.objects.filter(codigo_empresa=str(company), ejercicio=year).first()
+
+
+def _titles_of(snapshot):
+    return [getattr(snapshot, f"titulo_{index}") or "" for index in range(1, TREE_DEPTH + 1)]
+
+
+def _apply_path(query, titles, path):
     for item in path:
         if item["level"] not in titles:
             return None
         query = query.filter(**{f"nivel_{titles.index(item['level']) + 1}": item["label"]})
+    return query
+
+
+def _detail(title, source, headers, pending, message, rows, total):
+    return {
+        "title": title,
+        "source": source,
+        "pending": pending,
+        "message": message,
+        "headers": headers,
+        "rows": rows,
+        "total": total,
+    }
+
+
+def _posting_bundle(company, year, path, month, model, flag, title, headers, cells):
+    snapshot = _snapshot_for(company, year)
+    if snapshot is None or not getattr(snapshot, flag):
+        return _detail(title, "Movimientos", headers, True, _PENDING_LINES, [], ""), None
+    query = model.objects.filter(codigo_empresa=str(company), ejercicio=year)
+    query = _apply_path(query, _titles_of(snapshot), path)
+    if query is None:
+        return None, None
     if month is not None:
         query = query.filter(movement_date__month=int(month))
     stored = list(query.order_by("movement_date", "asiento", "account_code"))
-    total = sum((Decimal(row.amount) for row in stored), Decimal("0"))
+    amount = sum((Decimal(row.amount) for row in stored), Decimal("0"))
+    return (
+        _detail(title, "Movimientos", headers, False, "", [cells(row) for row in stored], format_money(amount)),
+        amount,
+    )
+
+
+def _income_cells(row):
+    return [
+        row.movement_date.strftime("%d/%m/%Y") if row.movement_date else "—",
+        row.asiento or "—",
+        _named(row.account_code, row.account_name),
+        row.invoice or "—",
+        format_money(row.amount),
+    ]
+
+
+def _expense_cells(row):
+    return [
+        row.movement_date.strftime("%d/%m/%Y") if row.movement_date else "—",
+        row.asiento or "—",
+        _named(row.account_code, row.account_name),
+        format_money(row.amount),
+    ]
+
+
+def _section(title, detail):
+    rows = detail["rows"]
+    message = detail["message"] if detail["pending"] else ("" if rows else "No hay apuntes en esta rama.")
     return {
         "title": title,
-        "source": "Movimientos",
-        "pending": False,
-        "message": "",
-        "headers": headers,
-        "rows": [
-            [
-                row.movement_date.strftime("%d/%m/%Y") if row.movement_date else "—",
-                row.asiento or "—",
-                _named(row.account_code, row.account_name),
-                row.invoice or "—",
-                format_money(row.amount),
-            ]
-            for row in stored
-        ],
-        "total": format_money(total),
+        "headers": detail["headers"],
+        "rows": rows,
+        "total": detail["total"] if rows else "",
+        "pending": detail["pending"],
+        "message": message,
     }
+
+
+def _share_project(share, titles):
+    if "Proyecto" in titles:
+        label = getattr(share, f"nivel_{titles.index('Proyecto') + 1}") or ""
+        if label and label != "Sin dato":
+            return label
+    return share.codigo_proyecto or "Sin dato"
 
 
 def _present_groups(company, grouped):
@@ -1315,10 +1587,7 @@ def _closed_figures(company, year, groups, snapshot):
                     codigo_proyecto=project,
                     sales_count=1,
                     sales_amount=amount,
-                    nivel_1="",
-                    nivel_2="",
-                    nivel_3="",
-                    nivel_4="",
+                    **_nivel_map([]),
                 )
             )
         elif month in pending and amount:
@@ -1326,7 +1595,7 @@ def _closed_figures(company, year, groups, snapshot):
             pending[month]["amount"] += amount
     names = dict(MONTH_NAMES)
     allowed = set(groups)
-    titles = [snapshot.titulo_1, snapshot.titulo_2, snapshot.titulo_3, snapshot.titulo_4]
+    titles = _titles_of(snapshot)
     indexes = [index for index, title in enumerate(titles) if title and level_group(title) in allowed]
     keys = _visible_figures(allowed)
     result = {
@@ -1339,13 +1608,13 @@ def _closed_figures(company, year, groups, snapshot):
     stored = [
         row
         for row in snapshot.rows.all()
-        if (row.nivel_1, row.nivel_2, row.nivel_3, row.nivel_4) not in open_only
+        if _stored_path(row) not in open_only
     ]
     if indexes and keys and stored:
         result["hierarchy"] = _nest(stored, indexes, titles, 0, keys)
     elif indexes and keys:
         result["hierarchy"] = _nest(
-            [share for share in closed_shares if share.nivel_1 or share.nivel_2 or share.nivel_3 or share.nivel_4],
+            [share for share in closed_shares if any(_stored_path(share))],
             indexes,
             titles,
             0,
@@ -1403,7 +1672,7 @@ def load_dashboard(company, year, groups):
     if closed_view is not None:
         return closed_view
     allowed = set(groups)
-    titles = [snapshot.titulo_1, snapshot.titulo_2, snapshot.titulo_3, snapshot.titulo_4]
+    titles = _titles_of(snapshot)
     indexes = [index for index, title in enumerate(titles) if title and level_group(title) in allowed]
     keys = _visible_figures(allowed)
     result = {}

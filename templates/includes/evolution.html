@@ -43,7 +43,7 @@
               </rect>
             {% endif %}
             {% if evolution.show_margin and column.margin_height != "0.0" %}
-              <rect class="bar margen" x="{{ column.x }}" y="{{ column.margin_y }}" width="{{ column.width }}" height="{{ column.margin_height }}" rx="2">
+              <rect class="bar margen" data-month="{{ column.number }}" data-kind="margen" x="{{ column.x }}" y="{{ column.margin_y }}" width="{{ column.width }}" height="{{ column.margin_height }}" rx="2">
                 <title>{{ column.title }}</title>
               </rect>
             {% endif %}
@@ -106,7 +106,15 @@
             {% if evolution_months.0.show_margin %}
               <tr>
                 <th>Margen</th>
-                {% for month in evolution_months %}<td>{{ month.margin_text }}</td>{% endfor %}
+                {% for month in evolution_months %}
+                  <td>
+                    {% if month.margin %}
+                      <button type="button" class="amount-link" data-month="{{ month.number }}" data-kind="margen">{{ month.margin_text }}</button>
+                    {% else %}
+                      {{ month.margin_text }}
+                    {% endif %}
+                  </td>
+                {% endfor %}
               </tr>
             {% endif %}
             {% if show_cumulative and evolution_months.0.show_sales %}
@@ -199,6 +207,11 @@
             }
             var dialog = document.getElementById("amount-detail");
             var lineDialog = document.getElementById("line-detail");
+            var detailToken = 0;
+            var lineToken = 0;
+            function reveal(target) {
+              if (target && !target.open) target.showModal();
+            }
             var detailTitle = document.getElementById("amount-detail-title");
             var detailSource = document.getElementById("amount-detail-source");
             var detailBody = document.getElementById("amount-detail-body");
@@ -284,6 +297,7 @@
               detailTotal.textContent = "Total " + payload.total;
             }
             function openLines(project, documentKey, lineKind) {
+              var token = ++lineToken;
               var url = root.getAttribute("data-lines-url")
                 + "?proyecto=" + encodeURIComponent(project)
                 + "&albaran=" + encodeURIComponent(documentKey);
@@ -292,6 +306,7 @@
                 if (!response.ok) throw new Error("lineas");
                 return response.json();
               }).then(function (payload) {
+                if (token !== lineToken) return;
                 document.getElementById("line-detail-title").textContent = payload.title;
                 document.getElementById("line-detail-note").textContent = payload.message || "";
                 var table = document.getElementById("line-detail-table");
@@ -302,13 +317,14 @@
                   table.appendChild(built.querySelector("tbody"));
                 }
                 document.getElementById("line-detail-total").textContent = payload.total ? "Total " + payload.total : "";
-                lineDialog.showModal();
+                reveal(lineDialog);
               }).catch(function () {
+                if (token !== lineToken) return;
                 document.getElementById("line-detail-title").textContent = "Líneas";
                 document.getElementById("line-detail-note").textContent = "No se han podido abrir las líneas.";
                 document.getElementById("line-detail-table").replaceChildren();
                 document.getElementById("line-detail-total").textContent = "";
-                lineDialog.showModal();
+                reveal(lineDialog);
               });
             }
             document.addEventListener("click", function (event) {
@@ -320,21 +336,24 @@
                 return;
               }
               var month = target.getAttribute("data-month");
-              if (!month || (kind !== "ingreso" && kind !== "compra" && kind !== "gasto")) return;
+              if (!month || (kind !== "ingreso" && kind !== "compra" && kind !== "gasto" && kind !== "margen")) return;
+              var token = ++detailToken;
               fetch(root.getAttribute("data-detail-url") + "?mes=" + month + "&tipo=" + kind, {
                 headers: { "Accept": "application/json" }
               }).then(function (response) {
                 if (!response.ok) throw new Error("detalle");
                 return response.json();
               }).then(function (payload) {
+                if (token !== detailToken) return;
                 fillDetail(payload);
-                dialog.showModal();
+                reveal(dialog);
               }).catch(function () {
+                if (token !== detailToken) return;
                 detailTitle.textContent = "Detalle";
                 detailSource.textContent = "No se ha podido abrir el detalle.";
                 detailBody.replaceChildren();
                 detailTotal.textContent = "";
-                dialog.showModal();
+                reveal(dialog);
               });
             });
             dialog.querySelector("[data-close-detail]").addEventListener("click", function () {

@@ -294,7 +294,10 @@ def test_a_movement_without_lines_uses_the_levels_written_on_it():
     )
     canal = next(node for node in panel["hierarchy"] if node["label"] == "01")
     assert canal["income"] == Decimal("500")
-    delegation = canal["children"][0]
+    customer = canal["children"][0]
+    assert customer["level"] == "Cliente"
+    assert customer["label"] == "Sin dato"
+    delegation = customer["children"][0]
     assert delegation["label"] == "ALGE1424"
     assert delegation["income"] == Decimal("500")
 
@@ -525,6 +528,7 @@ def test_the_analytical_tree_sets_the_report_order():
 
     assert path_levels(panel["hierarchy"]) == [
         "Canal",
+        "Cliente",
         "Delegación",
         "Departamento",
         "Proyecto",
@@ -590,6 +594,29 @@ def test_the_analytical_tree_sets_the_report_order():
         "Delegación",
         "Departamento",
         "Proyecto",
+        "Canal",
     ]
     assert total(reordered["hierarchy"], "sales") == Decimal("1010")
     assert total(reordered["hierarchy"], "margin") == Decimal("750")
+
+
+@pytest.mark.django_db
+def test_the_customer_label_uses_the_code_and_the_name():
+    panel = build_dashboard(
+        "1",
+        2026,
+        orders(),
+        purchases(),
+        movements(),
+        list(InformationGroup.values),
+        labels={"customer": {"C1": "Taller Norte"}},
+    )
+    found = []
+
+    def walk(nodes):
+        for node in nodes:
+            found.append((node["level"], node["label"]))
+            walk(node["children"])
+
+    walk(panel["hierarchy"])
+    assert ("Cliente", "C1 - (Taller Norte)") in found

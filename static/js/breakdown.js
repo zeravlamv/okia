@@ -95,11 +95,13 @@
         var cell = document.createElement("td");
         cell.className = "amount";
         var value = node[column[0]];
-        if (column[0] === "income" && node.label === "Sin dato" && value && value !== "0,00 EUR" && value !== "—") {
+        var origin = originKind(column[0]);
+        if (origin && value && value !== "—") {
           var opener = document.createElement("button");
           opener.type = "button";
           opener.className = "amount-link";
-          opener.setAttribute("data-kind", "arbol-ingreso");
+          opener.setAttribute("data-kind", "arbol-origen");
+          opener.setAttribute("data-type", origin);
           opener.setAttribute("data-path", JSON.stringify(trail));
           opener.textContent = value;
           cell.appendChild(opener);
@@ -171,6 +173,16 @@
   bindFinder(projects);
 })();
 
+function originKind(column) {
+  return {
+    sales: "ventas",
+    income: "ingresos",
+    expenses: "gastos",
+    margin: "margen",
+    margin_percent: "margen"
+  }[column] || "";
+}
+
 function bindTreeIncome(root) {
   var dialog = document.getElementById("tree-income");
   if (!dialog) {
@@ -187,29 +199,20 @@ function bindTreeIncome(root) {
     return cell;
   }
 
-  function show(payload) {
-    title.textContent = payload.title || "Ingresos";
-    source.textContent = payload.source ? "Origen: " + payload.source : "";
-    body.replaceChildren();
-    total.textContent = "";
-    if (payload.pending) {
-      var pending = document.createElement("p");
-      pending.textContent = payload.message;
-      body.appendChild(pending);
-      dialog.showModal();
-      return;
+  function note(text, strong) {
+    var paragraph = document.createElement("p");
+    if (strong) {
+      paragraph.className = "detail-total";
     }
-    if (!payload.rows || !payload.rows.length) {
-      var empty = document.createElement("p");
-      empty.textContent = "No hay apuntes en esta rama.";
-      body.appendChild(empty);
-      dialog.showModal();
-      return;
-    }
+    paragraph.textContent = text;
+    return paragraph;
+  }
+
+  function tableFrom(headers, rows) {
     var table = document.createElement("table");
     table.className = "table table-sm evolution-values";
     var head = document.createElement("tr");
-    payload.headers.forEach(function (label) {
+    headers.forEach(function (label) {
       var cell = document.createElement("th");
       cell.textContent = label;
       head.appendChild(cell);
@@ -217,7 +220,7 @@ function bindTreeIncome(root) {
     var thead = document.createElement("thead");
     thead.appendChild(head);
     var tbody = document.createElement("tbody");
-    payload.rows.forEach(function (row) {
+    rows.forEach(function (row) {
       var line = document.createElement("tr");
       row.forEach(function (value) {
         line.appendChild(cellText(value));
@@ -226,14 +229,50 @@ function bindTreeIncome(root) {
     });
     table.appendChild(thead);
     table.appendChild(tbody);
-    body.appendChild(table);
+    return table;
+  }
+
+  function show(payload) {
+    title.textContent = payload.title || "Detalle";
+    source.textContent = payload.source ? "Origen: " + payload.source : "";
+    body.replaceChildren();
+    total.textContent = "";
+    if (payload.pending) {
+      body.appendChild(note(payload.message));
+      dialog.showModal();
+      return;
+    }
+    if (payload.sections && payload.sections.length) {
+      payload.sections.forEach(function (section) {
+        var heading = document.createElement("h3");
+        heading.textContent = section.title;
+        body.appendChild(heading);
+        if (section.pending || !section.rows || !section.rows.length) {
+          body.appendChild(note(section.message || "No hay apuntes en esta rama."));
+          return;
+        }
+        body.appendChild(tableFrom(section.headers, section.rows));
+        if (section.total) {
+          body.appendChild(note("Total " + section.total, true));
+        }
+      });
+      total.textContent = payload.total ? "Margen " + payload.total : "";
+      dialog.showModal();
+      return;
+    }
+    if (!payload.rows || !payload.rows.length) {
+      body.appendChild(note(payload.message || "No hay apuntes en esta rama."));
+      dialog.showModal();
+      return;
+    }
+    body.appendChild(tableFrom(payload.headers, payload.rows));
     total.textContent = payload.total ? "Total " + payload.total : "";
     dialog.showModal();
   }
 
   function fail() {
     show({
-      title: "Ingresos",
+      title: "Detalle",
       source: "",
       pending: true,
       message: "No se ha podido abrir el detalle.",
@@ -242,11 +281,13 @@ function bindTreeIncome(root) {
   }
 
   root.addEventListener("click", function (event) {
-    var button = event.target.closest("[data-kind='arbol-ingreso']");
+    var button = event.target.closest("[data-kind='arbol-origen']");
     if (!button) {
       return;
     }
-    var url = root.getAttribute("data-income-url") + "?ruta=" + encodeURIComponent(button.getAttribute("data-path"));
+    var url = root.getAttribute("data-income-url")
+      + "?tipo=" + encodeURIComponent(button.getAttribute("data-type"))
+      + "&ruta=" + encodeURIComponent(button.getAttribute("data-path"));
     var month = root.getAttribute("data-income-month");
     if (month) {
       url += "&mes=" + encodeURIComponent(month);

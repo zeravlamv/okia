@@ -13,6 +13,7 @@ class DashboardSnapshot(models.Model):
     titulo_2 = models.CharField(max_length=40, blank=True)
     titulo_3 = models.CharField(max_length=40, blank=True)
     titulo_4 = models.CharField(max_length=40, blank=True)
+    titulo_5 = models.CharField(max_length=40, blank=True, default="")
     sales_count = models.PositiveIntegerField(default=0)
     sales_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     purchase_order_count = models.PositiveIntegerField(default=0)
@@ -31,6 +32,7 @@ class DashboardSnapshot(models.Model):
     book_stored = models.BooleanField(default=False)
     income_stored = models.BooleanField(default=False)
     tree_income_stored = models.BooleanField(default=False)
+    tree_expense_stored = models.BooleanField(default=False)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -45,7 +47,7 @@ class DashboardSnapshot(models.Model):
 
 
 class AnalyticalSummary(models.Model):
-    """Una combinación de los cuatro primeros niveles analíticos."""
+    """Una combinación de los niveles del árbol analítico."""
 
     snapshot = models.ForeignKey(
         DashboardSnapshot,
@@ -56,6 +58,7 @@ class AnalyticalSummary(models.Model):
     nivel_2 = models.CharField(max_length=500, blank=True)
     nivel_3 = models.CharField(max_length=500, blank=True)
     nivel_4 = models.CharField(max_length=500, blank=True)
+    nivel_5 = models.CharField(max_length=500, blank=True, default="")
     sales = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     income = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     purchases = models.DecimalField(max_digits=18, decimal_places=2, default=0)
@@ -83,6 +86,10 @@ class AsideSummary(models.Model):
         verbose_name_plural = "pedidos fuera de la jerarquía"
 
 
+REVIEW_PENDING = "Pdte. Revisar"
+REVIEW_DONE = "Revisado"
+
+
 class ProjectLife(models.Model):
     """Vida de un proyecto, desde la fecha del pedido, aunque cruce varios ejercicios."""
 
@@ -96,6 +103,11 @@ class ProjectLife(models.Model):
     levels_stored = models.BooleanField(default=False)
     lines_stored = models.BooleanField(default=False)
     income_stored = models.BooleanField(default=False)
+    review_status = models.CharField(
+        max_length=20,
+        choices=((REVIEW_PENDING, REVIEW_PENDING), (REVIEW_DONE, REVIEW_DONE)),
+        default=REVIEW_PENDING,
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -235,10 +247,32 @@ class TreeIncome(models.Model):
     nivel_2 = models.CharField(max_length=500, blank=True, default="")
     nivel_3 = models.CharField(max_length=500, blank=True, default="")
     nivel_4 = models.CharField(max_length=500, blank=True, default="")
+    nivel_5 = models.CharField(max_length=500, blank=True, default="")
 
     class Meta:
         verbose_name = "ingreso del árbol"
         verbose_name_plural = "ingresos del árbol"
+
+
+class TreeExpense(models.Model):
+    """Gasto del árbol analítico, con el nivel donde cayó el apunte."""
+
+    codigo_empresa = models.CharField(max_length=15)
+    ejercicio = models.PositiveIntegerField()
+    movement_date = models.DateField(null=True, blank=True)
+    asiento = models.CharField(max_length=20, blank=True, default="")
+    account_code = models.CharField(max_length=20, blank=True, default="")
+    account_name = models.CharField(max_length=120, blank=True, default="")
+    amount = models.DecimalField(max_digits=18, decimal_places=2)
+    nivel_1 = models.CharField(max_length=500, blank=True, default="")
+    nivel_2 = models.CharField(max_length=500, blank=True, default="")
+    nivel_3 = models.CharField(max_length=500, blank=True, default="")
+    nivel_4 = models.CharField(max_length=500, blank=True, default="")
+    nivel_5 = models.CharField(max_length=500, blank=True, default="")
+
+    class Meta:
+        verbose_name = "gasto del árbol"
+        verbose_name_plural = "gastos del árbol"
 
 
 class BookIncome(models.Model):
@@ -400,6 +434,7 @@ class ProjectExerciseShare(models.Model):
     nivel_2 = models.CharField(max_length=500, blank=True, default="")
     nivel_3 = models.CharField(max_length=500, blank=True, default="")
     nivel_4 = models.CharField(max_length=500, blank=True, default="")
+    nivel_5 = models.CharField(max_length=500, blank=True, default="")
     sales = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     income = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     purchases = models.DecimalField(max_digits=18, decimal_places=2, default=0)

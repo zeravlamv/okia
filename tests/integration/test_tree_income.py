@@ -8,13 +8,13 @@ from django.test import Client
 from apps.access.demo import ensure_demo
 from apps.access.models import InformationGroup, ProfilePermission
 from apps.erp.sample import Movement, SaleOrder
-from apps.margins.dashboard import analytical_dimensions
+from apps.margins.dashboard import tree_dimensions
 from apps.margins.models import AnalyticalSummary, DashboardSnapshot, TreeIncome
 from apps.margins.snapshot import month_hierarchy, replace_tree_incomes, tree_income_detail
 
 
 def _titles():
-    return [item[1] for item in list(analytical_dimensions())[:4]]
+    return [item[1] for item in tree_dimensions()]
 
 
 def _snapshot():
@@ -23,10 +23,7 @@ def _snapshot():
         codigo_empresa="1",
         ejercicio=2026,
         tree_income_stored=True,
-        titulo_1=titles[0],
-        titulo_2=titles[1],
-        titulo_3=titles[2],
-        titulo_4=titles[3],
+        **{f"titulo_{index}": title for index, title in enumerate(titles, start=1)},
     )
 
 
@@ -89,9 +86,9 @@ def test_a_blank_project_income_lists_the_posting():
     )
     replace_tree_incomes("1", 2026, [_blank_income(), placed], [order], [], labels)
     path = [
-        {"level": titles[1], "label": "WAYN0030 — Headquarter DRAKE"},
-        {"level": titles[2], "label": "Sin dato"},
+        {"level": titles[2], "label": "WAYN0030 — Headquarter DRAKE"},
         {"level": titles[3], "label": "Sin dato"},
+        {"level": titles[4], "label": "Sin dato"},
     ]
     detail = tree_income_detail("1", 2026, path)
     assert detail["rows"] == [[
@@ -103,7 +100,7 @@ def test_a_blank_project_income_lists_the_posting():
     ]]
     assert detail["total"] == "2.148,00 EUR"
     assert detail["source"] == "Movimientos"
-    assert TreeIncome.objects.filter(nivel_4="230309 — PRUEBAS Y TEST BONAREA").count() == 1
+    assert TreeIncome.objects.filter(nivel_5="230309 — PRUEBAS Y TEST BONAREA").count() == 1
 
 
 @pytest.mark.django_db
@@ -165,8 +162,8 @@ def test_tree_income_page_requires_movements_and_a_known_level():
     client = Client()
     client.login(username="demo", password="demo")
     route = json.dumps([
-        {"level": titles[1], "label": "WAYN0030 — Headquarter DRAKE"},
-        {"level": titles[3], "label": "Sin dato"},
+        {"level": titles[2], "label": "WAYN0030 — Headquarter DRAKE"},
+        {"level": titles[4], "label": "Sin dato"},
     ])
     opened = client.get("/arbol/ingresos/", {"ruta": route})
     assert opened.status_code == 200

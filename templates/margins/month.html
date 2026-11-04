@@ -120,7 +120,7 @@
             <article class="card margen">
               <div class="card-body">
                 <h2>Margen</h2>
-                <p class="kpi-amount">{{ margin }}</p>
+                <p class="kpi-amount"><button type="button" class="amount-link" data-kind="margen" data-month="{{ month }}">{{ margin }}</button></p>
                 <p class="kpi-count">{{ margin_percent }}</p>
                 <p class="kpi-count">Grupo 7 menos el grupo 6.</p>
               </div>
@@ -157,6 +157,11 @@
         var detailBody = document.getElementById("amount-detail-body");
         var detailTotal = document.getElementById("amount-detail-total");
         var commercial = { pedido: true, pedido_compra: true, albaran: true, albaran_compra: true };
+        var detailToken = 0;
+        var lineToken = 0;
+        function reveal(target) {
+          if (target && !target.open) target.showModal();
+        }
         function tableFrom(headers, rows) {
           var table = document.createElement("table");
           table.className = "table table-sm evolution-values";
@@ -196,6 +201,7 @@
           return table;
         }
         function openLines(project, documentKey, lineKind) {
+          var token = ++lineToken;
           var url = root.getAttribute("data-lines-url")
             + "?proyecto=" + encodeURIComponent(project)
             + "&albaran=" + encodeURIComponent(documentKey)
@@ -204,6 +210,7 @@
             if (!response.ok) throw new Error("lineas");
             return response.json();
           }).then(function (payload) {
+            if (token !== lineToken) return;
             document.getElementById("line-detail-title").textContent = payload.title || "Líneas";
             document.getElementById("line-detail-note").textContent = payload.message || (payload.source ? "Origen: " + payload.source : "");
             var table = document.getElementById("line-detail-table");
@@ -214,13 +221,14 @@
               table.appendChild(built.querySelector("tbody"));
             }
             document.getElementById("line-detail-total").textContent = payload.total ? "Total " + payload.total : "";
-            lineDialog.showModal();
+            reveal(lineDialog);
           }).catch(function () {
+            if (token !== lineToken) return;
             document.getElementById("line-detail-title").textContent = "Líneas";
             document.getElementById("line-detail-note").textContent = "No se han podido abrir las líneas.";
             document.getElementById("line-detail-table").replaceChildren();
             document.getElementById("line-detail-total").textContent = "";
-            lineDialog.showModal();
+            reveal(lineDialog);
           });
         }
         document.addEventListener("click", function (event) {
@@ -235,9 +243,11 @@
           if (!commercial[kind]) return;
           var month = target.getAttribute("data-month");
           if (!month) return;
+          var token = ++detailToken;
           fetch(root.getAttribute("data-documents-url") + "?mes=" + month + "&tipo=" + encodeURIComponent(kind), { headers: { "Accept": "application/json" } })
             .then(function (response) { if (!response.ok) throw new Error("detalle"); return response.json(); })
             .then(function (payload) {
+              if (token !== detailToken) return;
               detailTitle.textContent = payload.title || "Detalle";
               detailSource.textContent = payload.source ? "Origen: " + payload.source : "";
               detailBody.replaceChildren();
@@ -250,14 +260,15 @@
                 detailBody.appendChild(tableFrom(payload.headers, payload.rows));
                 detailTotal.textContent = "Total " + payload.total;
               }
-              dialog.showModal();
+              reveal(dialog);
             })
             .catch(function () {
+              if (token !== detailToken) return;
               detailTitle.textContent = "Detalle";
               detailSource.textContent = "No se ha podido abrir el detalle.";
               detailBody.replaceChildren();
               detailTotal.textContent = "";
-              dialog.showModal();
+              reveal(dialog);
             });
         });
         dialog.querySelector("[data-close-detail]").addEventListener("click", function () { dialog.close(); });
@@ -275,6 +286,6 @@
       <p class="detail-total" id="tree-income-total"></p>
     </dialog>
     {{ hierarchy|json_script:"hierarchy-data" }}
-    <script src="{% static 'js/breakdown.js' %}?v=5"></script>
+    <script src="{% static 'js/breakdown.js' %}?v=6"></script>
   </div>
 {% endblock %}

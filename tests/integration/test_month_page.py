@@ -75,6 +75,7 @@ def test_march_summary_lists_its_projects_and_opens_the_fiche():
     assert 'data-kind="ingreso"' in body
     assert 'data-kind="compra"' in body
     assert 'data-kind="gasto"' in body
+    assert 'data-kind="margen"' in body
     assert 'data-month="3"' in body
     assert "Ficha de proyecto" in body
     assert "Mostrar gráfica" in body

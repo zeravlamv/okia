@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from apps.access.models import AnalyticalLevel, InformationGroup
 from apps.erp.mapping import is_cancelled
-from apps.margins.hierarchy import FIGURES, build_hierarchy
+from apps.margins.hierarchy import FIGURES, TREE_DEPTH, build_hierarchy
 from apps.margins.services import in_period, ledger_total, margin_ratio, sale_price
 
 _LEVELS = {
@@ -22,6 +22,8 @@ _DEFAULT_ORDER = (
 
 
 def level_group(title):
+    if title == "Cliente":
+        return InformationGroup.CANALES
     for name, group in _LEVELS.values():
         if name == title:
             return group
@@ -39,6 +41,19 @@ def analytical_dimensions():
     if len(stored) != len(_DEFAULT_ORDER) or len(set(stored)) != len(_DEFAULT_ORDER):
         stored = list(_DEFAULT_ORDER)
     return tuple((code, *_LEVELS[code]) for code in stored)
+
+
+def tree_dimensions(allowed=None):
+    """Los niveles del árbol. El cliente va justo después de Canal y no es un nivel configurado."""
+
+    selected = []
+    for code, title, group in analytical_dimensions():
+        if allowed is not None and group not in allowed:
+            continue
+        selected.append((code, title, group))
+        if code == AnalyticalLevel.Level.CANAL:
+            selected.append(("customer", "Cliente", InformationGroup.CANALES))
+    return tuple(selected[:TREE_DEPTH])
 
 
 def _active_orders(company, year, orders):
@@ -116,7 +131,7 @@ def build_dashboard(
 
     allowed = set(groups)
     active = _active_orders(company, year, orders)
-    dimensions = [item for item in analytical_dimensions() if item[2] in allowed][:4]
+    dimensions = list(tree_dimensions(allowed))
     tree = build_hierarchy(
         company,
         year,

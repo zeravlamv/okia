@@ -12,12 +12,14 @@ from django.utils import timezone
 
 from apps.access.models import InformationGroup
 from apps.access.services import has_groups, selected_company, set_company
+from apps.margins.discrepancies import pending_projects, reviewed_projects
 from apps.margins.filters import filter_context, safe_next, selected_year, set_year
 from apps.margins.format import format_money, format_percent
-from apps.margins.models import MONTH_NAMES
+from apps.margins.models import MONTH_NAMES, ProjectLife, REVIEW_DONE, REVIEW_PENDING
 from apps.margins.month_refresh import refresh_month
 from apps.margins.month_summary import chosen_month, month_board, month_document_detail
 from apps.margins.services import margin_ratio
+from apps.margins.hierarchy import TREE_DEPTH
 from apps.margins.project_life import closed_months, load_project
 from apps.margins.snapshot import (
     closure_notice,
@@ -28,7 +30,7 @@ from apps.margins.snapshot import (
     evolution_detail,
     month_hierarchy,
     monthly_bars,
-    tree_income_detail,
+    tree_origin_detail,
     refresh_snapshot,
     snapshot_updated_at,
 )
@@ -191,11 +193,20 @@ def dashboard(request):
     year = selected_year(request)
     groups = _visible_groups(request.user)
     figures = load_dashboard(company, year, groups)
+    notice = _discrepancy_notice(company, year, groups)
     if figures is None:
         return render(
             request,
             "margins/dashboard.html",
-            _with_filters(request, company, {"pending_refresh": True, "hierarchy": {"nodes": [], "aside": []}}),
+            _with_filters(
+                request,
+                company,
+                {
+                    "pending_refresh": True,
+                    "hierarchy": {"nodes": [], "aside": []},
+                    **notice,
+                },
+            ),
         )
     breakdown = _format_hierarchy(figures.get("hierarchy", []))
     aside = [
@@ -223,6 +234,7 @@ def dashboard(request):
                 "accounted_purchases": _card(figures.get("accounted_purchases")),
                 "expenses": _card(figures.get("expenses")),
                 "pending_refresh": False,
+                **notice,
                 "hierarchy": {"nodes": breakdown, "aside": aside},
                 "show_margin": "margin" in figures,
                 "months": (
@@ -242,6 +254,37 @@ def dashboard(request):
             },
         ),
     )
+
+
+def _discrepancy_notice(company, year, groups):
+    pending = _notice_rows(pending_projects(company, year, groups))
+    reviewed = _notice_rows(reviewed_projects(company, year, groups))
+    return {
+        "discrepancy_count": len(pending),
+        "discrepancies": pending,
+        "reviewed_count": len(reviewed),
+        "reviewed_projects": reviewed,
+    }
+
+
+def _notice_rows(rows):
+    return [
+        {
+            "code": row["code"],
+            "customer": row["customer"],
+            "pairs": [
+                {
+                    "name": pair["name"],
+                    "left_label": pair["left_label"],
+                    "right_label": pair["right_label"],
+                    "left": format_money(pair["left"]),
+                    "right": format_money(pair["right"]),
+                }
+                for pair in row["pairs"]
+            ],
+        }
+        for row in rows
+    ]
 
 
 def _format_node(node):
@@ -328,6 +371,14 @@ def project_life(request, codigo):
     company = selected_company(request)
     if company is None:
         return redirect("company-select")
+    if request.method == "POST":
+        chosen = request.POST.get("revision", "")
+        if chosen in (REVIEW_PENDING, REVIEW_DONE):
+            ProjectLife.objects.filter(
+                codigo_empresa=str(company),
+                codigo_proyecto=str(codigo),
+            ).update(review_status=chosen)
+        return redirect("project-life", codigo=codigo)
     life = load_project(company, codigo, _visible_groups(request.user), timezone.localdate())
     context = _with_filters(request, company, {"life": life, "project_code": codigo, "pending_refresh": life is None})
     if life is not None:
@@ -341,14 +392,14 @@ def _visible_groups(user):
 
 @login_required
 def evolution_amount(request):
-    """Detalle guardado del ingreso, la compra o el gasto de un mes. No lee SQL Server."""
+    """Detalle guardado del ingreso, la compra, el gasto o el margen de un mes. No lee SQL Server."""
 
     company = selected_company(request)
     if company is None:
         return JsonResponse({"error": "Sin empresa"}, status=403)
     raw_month = request.GET.get("mes", "")
     kind = request.GET.get("tipo", "")
-    if kind not in ("ingreso", "compra", "gasto") or not raw_month.isdigit() or not 1 <= int(raw_month) <= 12:
+    if kind not in ("ingreso", "compra", "gasto", "margen") or not raw_month.isdigit() or not 1 <= int(raw_month) <= 12:
         return JsonResponse({"error": "Petición no válida"}, status=404)
     groups = _visible_groups(request.user)
     if InformationGroup.MOVIMIENTOS not in groups:
@@ -358,18 +409,22 @@ def evolution_amount(request):
 
 @login_required
 def tree_income(request):
-    """Apuntes guardados de un ingreso sin nivel. No lee SQL Server."""
+    """Origen guardado de una cifra del árbol. No lee SQL Server."""
 
     company = selected_company(request)
     if company is None:
         return JsonResponse({"error": "Sin empresa"}, status=403)
-    if InformationGroup.MOVIMIENTOS not in _visible_groups(request.user):
+    kind = request.GET.get("tipo", "ingresos")
+    if kind not in ("ventas", "ingresos", "gastos", "margen"):
+        return JsonResponse({"error": "Petición no válida"}, status=404)
+    needed = InformationGroup.PEDIDOS_VENTA if kind == "ventas" else InformationGroup.MOVIMIENTOS
+    if needed not in _visible_groups(request.user):
         return JsonResponse({"error": "Sin permiso"}, status=403)
     try:
         path = json.loads(request.GET.get("ruta", ""))
     except json.JSONDecodeError:
         return JsonResponse({"error": "Petición no válida"}, status=404)
-    if not isinstance(path, list) or not 1 <= len(path) <= 4:
+    if not isinstance(path, list) or not 1 <= len(path) <= TREE_DEPTH:
         return JsonResponse({"error": "Petición no válida"}, status=404)
     cleaned = []
     seen = set()
@@ -388,7 +443,7 @@ def tree_income(request):
         if not raw_month.isdigit() or not 1 <= int(raw_month) <= 12:
             return JsonResponse({"error": "Petición no válida"}, status=404)
         month = int(raw_month)
-    detail = tree_income_detail(company, selected_year(request), cleaned, month)
+    detail = tree_origin_detail(company, selected_year(request), cleaned, kind, month)
     if detail is None:
         return JsonResponse({"error": "Petición no válida"}, status=404)
     return JsonResponse(detail)

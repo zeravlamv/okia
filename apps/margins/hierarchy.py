@@ -10,6 +10,7 @@ from apps.margins.services import (
 )
 
 FIGURES = ("sales", "income", "purchases", "expenses", "margin")
+TREE_DEPTH = 5
 
 
 def _code(value):
@@ -25,6 +26,44 @@ def _display(code, names):
     if not description or description == code:
         return code
     return f"{code} — {description}"
+
+
+def _customer_label(code, names):
+    """CodigoCliente - (nombre). Sin nombre distinto, queda el código."""
+
+    if not code:
+        return "Sin dato"
+    description = _code(names.get(code))
+    if not description or description == code:
+        return code
+    return f"{code} - ({description})"
+
+
+def _level_label(attribute, code, labels):
+    names = (labels or {}).get(attribute, {})
+    if attribute == "customer":
+        return _customer_label(code, names)
+    return _display(code, names)
+
+
+def _order_code(order, attribute):
+    if attribute == "customer":
+        return _code(getattr(order, "codigo_cliente", ""))
+    return _code(getattr(order, attribute, ""))
+
+
+def customers_by_project(orders):
+    """El cliente del proyecto es el del primer pedido de venta no anulado."""
+
+    found = {}
+    for order in orders or []:
+        if is_cancelled(getattr(order, "status", "")):
+            continue
+        project = _code(getattr(order, "project", ""))
+        if not project or project in found:
+            continue
+        found[project] = _code(getattr(order, "codigo_cliente", ""))
+    return found
 
 
 def _classify(company, year, orders):
@@ -102,7 +141,7 @@ def _place_codes(root, codes, dimensions, labels, figures, incomplete):
         if code not in kids:
             created = _blank()
             created["level"] = title
-            created["label"] = _display(code, labels.get(attribute, {}))
+            created["label"] = _level_label(attribute, code, labels)
             created["code"] = code
             kids[code] = created
         node = kids[code]
@@ -110,7 +149,7 @@ def _place_codes(root, codes, dimensions, labels, figures, incomplete):
 
 
 def _place(root, order, dimensions, labels, figures, incomplete):
-    codes = [_code(getattr(order, attribute, "")) for attribute, _title, _group in dimensions]
+    codes = [_order_code(order, attribute) for attribute, _title, _group in dimensions]
     _place_codes(root, codes, dimensions, labels, figures, incomplete)
 
 
@@ -162,9 +201,14 @@ def _line_amount(header_signed, line_amount):
     return amount
 
 
-def _line_codes(dimensions, analytic, project=None):
+def _line_codes(dimensions, analytic, project=None, customers=None):
+    customers = customers or {}
     codes = []
     for attribute, _title, _group in dimensions:
+        if attribute == "customer":
+            chosen = project if project is not None else _code(getattr(analytic, "project", ""))
+            codes.append(customers.get(chosen, ""))
+            continue
         if attribute == "project" and project is not None:
             codes.append(project)
             continue
@@ -211,7 +255,7 @@ def _movement_figures(kind, amount):
     return figures
 
 
-def _apply_analytical(root, company, year, movements, labels, dimensions, unique):
+def _apply_analytical(root, company, year, movements, labels, dimensions, unique, customers=None):
     """Cada fila de AnaMovimientos suma su importe en los niveles que ya trae."""
 
     for movement in movements:
@@ -240,7 +284,7 @@ def _apply_analytical(root, company, year, movements, labels, dimensions, unique
             ]
         for analytic in lines:
             project = _resolved_project(analytic, unique)
-            codes = _line_codes(dimensions, analytic, project)
+            codes = _line_codes(dimensions, analytic, project, customers)
             if not any(codes):
                 continue
             amount = _line_amount(signed, analytic.amount)
@@ -289,9 +333,31 @@ def _invoice_number(comment):
     return text[start + len(marker) :].strip()
 
 
-def tree_income_entries(company, year, movements, dimensions, unique):
+def labeled_levels(codes, dimensions, labels):
+    """Etiqueta de cada nivel, en el orden del árbol. Completa hasta el fondo del árbol."""
+
+    path = [
+        _level_label(attribute, code, labels)
+        for (attribute, _title, _group), code in zip(dimensions, codes)
+    ]
+    while len(path) < TREE_DEPTH:
+        path.append("")
+    return path[:TREE_DEPTH]
+
+
+def tree_income_entries(company, year, movements, dimensions, unique, customers=None):
     """Cada ingreso que el árbol coloca, con los códigos del nivel donde cae."""
 
+    return _tree_postings(company, year, movements, dimensions, unique, "income", customers)
+
+
+def tree_expense_entries(company, year, movements, dimensions, unique, customers=None):
+    """Cada gasto que el árbol coloca, con los códigos del nivel donde cae."""
+
+    return _tree_postings(company, year, movements, dimensions, unique, "expenses", customers)
+
+
+def _tree_postings(company, year, movements, dimensions, unique, kind, customers=None):
     company = str(company)
     year = int(year)
     found = []
@@ -300,9 +366,12 @@ def tree_income_entries(company, year, movements, dimensions, unique):
             continue
         if is_closing_entry(getattr(movement, "comment", "")):
             continue
-        if not is_income_account(movement.account_code, movement.account_name):
+        if kind == "income":
+            if not is_income_account(movement.account_code, movement.account_name):
+                continue
+        elif not is_expense_account(movement.account_code, movement.account_name):
             continue
-        signed = _header_signed(movement, "income")
+        signed = _header_signed(movement, "income" if kind == "income" else "expenses")
         lines = [analytic for analytic in movement.slices if any(_line_codes(dimensions, analytic))]
         if not lines and signed is not None:
             lines = [
@@ -317,7 +386,7 @@ def tree_income_entries(company, year, movements, dimensions, unique):
             ]
         for analytic in lines:
             project = _resolved_project(analytic, unique)
-            codes = _line_codes(dimensions, analytic, project)
+            codes = _line_codes(dimensions, analytic, project, customers)
             if not any(codes):
                 continue
             amount = _line_amount(signed, analytic.amount)
@@ -344,6 +413,7 @@ def build_hierarchy(
 
     del purchases
     closed, pending = _classify(company, year, orders)
+    customers = customers_by_project(orders)
     root = _blank()
     if dimensions:
         for order in closed:
@@ -357,6 +427,7 @@ def build_hierarchy(
             labels or {},
             dimensions,
             _unique_projects(orders, purchase_orders),
+            customers,
         )
     _rollup(root)
     aside = sorted((_aside(order) for order in pending), key=lambda item: item["identity"])

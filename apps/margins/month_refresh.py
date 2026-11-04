@@ -22,8 +22,15 @@ from apps.erp.mapping import (
     is_income_account,
 )
 from apps.erp.sales import fetch_orders
-from apps.margins.dashboard import analytical_dimensions
-from apps.margins.hierarchy import _display, _unique_projects, tree_income_entries
+from apps.margins.dashboard import tree_dimensions
+from apps.margins.hierarchy import (
+    TREE_DEPTH,
+    _unique_projects,
+    customers_by_project,
+    labeled_levels,
+    tree_expense_entries,
+    tree_income_entries,
+)
 from apps.margins.models import (
     MONTH_NAMES,
     BookExpense,
@@ -35,6 +42,7 @@ from apps.margins.models import (
     ProjectLife,
     ProjectMilestone,
     ProjectPurchase,
+    TreeExpense,
     TreeIncome,
 )
 from apps.margins.project_life import (
@@ -82,6 +90,7 @@ def refresh_month(company, year, month, progress=None):
     movements = fetch_period_movements(company, year, month)
     labels = fetch_dimension_labels(company)
     customers = {} if settings.SAMPLE_ERP else fetch_customer_names(company)
+    labels["customer"] = customers
     suppliers = {} if settings.SAMPLE_ERP else fetch_supplier_names(company)
     tell(6, "Guardando el mes")
     retained = _retained_codes(company, year)
@@ -578,53 +587,77 @@ def _replace_books(company, year, month, movements, labels):
 
 
 def _replace_tree(company, year, month, movements, orders, purchase_orders, labels):
-    dimensions = list(analytical_dimensions())[:4]
-    entries = [
-        entry
-        for entry in tree_income_entries(
-            company,
-            year,
-            movements,
-            dimensions,
-            _unique_projects(orders or [], purchase_orders or []),
-        )
-        if _in_month(entry["date"], year, month)
-    ]
-    names = labels or {}
-    rows = []
-    for entry in entries:
-        path = [
-            _display(code, names.get(attribute, {}))
-            for (attribute, _title, _group), code in zip(dimensions, entry["codes"])
-        ]
-        while len(path) < 4:
-            path.append("")
-        rows.append(
-            TreeIncome(
-                codigo_empresa=company,
-                ejercicio=year,
-                movement_date=entry["date"],
-                asiento=entry["asiento"][:20],
-                account_code=entry["account_code"][:20],
-                account_name=entry["account_name"][:120],
-                invoice=entry["invoice"][:40],
-                amount=entry["amount"],
-                nivel_1=path[0][:500],
-                nivel_2=path[1][:500],
-                nivel_3=path[2][:500],
-                nivel_4=path[3][:500],
-            )
-        )
+    dimensions = list(tree_dimensions())
+    unique = _unique_projects(orders or [], purchase_orders or [])
+    customers = customers_by_project(orders or [])
+    income_rows = _month_rows(
+        company,
+        year,
+        month,
+        tree_income_entries(company, year, movements, dimensions, unique, customers),
+        dimensions,
+        labels,
+        TreeIncome,
+        True,
+    )
+    expense_rows = _month_rows(
+        company,
+        year,
+        month,
+        tree_expense_entries(company, year, movements, dimensions, unique, customers),
+        dimensions,
+        labels,
+        TreeExpense,
+        False,
+    )
     TreeIncome.objects.filter(
         codigo_empresa=company,
         ejercicio=year,
         movement_date__year=year,
         movement_date__month=month,
     ).delete()
-    TreeIncome.objects.bulk_create(rows, batch_size=500)
-    if not rows:
-        return
+    TreeExpense.objects.filter(
+        codigo_empresa=company,
+        ejercicio=year,
+        movement_date__year=year,
+        movement_date__month=month,
+    ).delete()
+    TreeIncome.objects.bulk_create(income_rows, batch_size=500)
+    TreeExpense.objects.bulk_create(expense_rows, batch_size=500)
     snapshot = DashboardSnapshot.objects.filter(codigo_empresa=company, ejercicio=year).first()
-    if snapshot is not None and not snapshot.tree_income_stored:
+    if snapshot is None:
+        return
+    fields = []
+    if income_rows and not snapshot.tree_income_stored:
         snapshot.tree_income_stored = True
-        snapshot.save(update_fields=["tree_income_stored"])
+        fields.append("tree_income_stored")
+    if expense_rows and not snapshot.tree_expense_stored:
+        snapshot.tree_expense_stored = True
+        fields.append("tree_expense_stored")
+    if fields:
+        snapshot.save(update_fields=fields)
+
+
+def _month_rows(company, year, month, entries, dimensions, labels, model, with_invoice):
+    rows = []
+    for entry in entries:
+        if not _in_month(entry["date"], year, month):
+            continue
+        path = labeled_levels(entry["codes"], dimensions, labels)
+        fields = {
+            "codigo_empresa": company,
+            "ejercicio": year,
+            "movement_date": entry["date"],
+            "asiento": entry["asiento"][:20],
+            "account_code": entry["account_code"][:20],
+            "account_name": entry["account_name"][:120],
+            "amount": entry["amount"],
+            **{
+                f"nivel_{index}": (path[index - 1] if index <= len(path) else "")[:500]
+                for index in range(1, TREE_DEPTH + 1)
+            },
+        }
+        if with_invoice:
+            fields["invoice"] = entry["invoice"][:40]
+        rows.append(model(**fields))
+    return rows

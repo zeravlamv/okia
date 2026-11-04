@@ -1,4 +1,3 @@
-from calendar import monthrange
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
@@ -20,6 +19,7 @@ from apps.margins.models import (
     ProjectExpense,
     ProjectIncome,
     ProjectLife,
+    REVIEW_PENDING,
     ProjectMilestone,
     ProjectOrderShare,
     ProjectPurchase,
@@ -177,7 +177,7 @@ def _month_totals(rows, date_name):
 
 
 def _evolution(order_date, end, deliveries, purchases, expenses, show_deliveries, show_purchases, show_expenses):
-    """Cada mes arrastra lo acumulado desde el pedido. El margen es ese albaranado menos el gasto."""
+    """Cada mes muestra su albaranado, su gasto y el margen de ese mes."""
 
     if order_date is None or end is None:
         return []
@@ -185,25 +185,27 @@ def _evolution(order_date, end, deliveries, purchases, expenses, show_deliveries
     bought = _month_totals(purchases, "movement_date")
     spent = _month_totals(expenses, "movement_date")
     show_margin = show_deliveries and show_expenses
-    running_delivered = Decimal("0")
-    running_purchases = Decimal("0")
-    running_expenses = Decimal("0")
     raw = []
-    started = False
     for start in month_span(order_date, end):
-        running_delivered += delivered.get(start, Decimal("0"))
-        running_purchases += bought.get(start, Decimal("0"))
-        running_expenses += spent.get(start, Decimal("0"))
-        if not started and running_delivered == 0 and running_purchases == 0 and running_expenses == 0:
+        month_delivered = delivered.get(start, Decimal("0"))
+        month_purchases = bought.get(start, Decimal("0"))
+        month_expenses = spent.get(start, Decimal("0"))
+        visible = []
+        if show_deliveries:
+            visible.append(month_delivered)
+        if show_purchases:
+            visible.append(month_purchases)
+        if show_expenses:
+            visible.append(month_expenses)
+        if not visible or all(value == 0 for value in visible):
             continue
-        started = True
         raw.append(
             (
                 start,
-                running_delivered,
-                running_purchases,
-                running_expenses,
-                running_delivered - running_purchases - running_expenses,
+                month_delivered,
+                month_purchases,
+                month_expenses,
+                month_delivered - month_purchases - month_expenses,
             )
         )
     peak = Decimal("0")
@@ -244,10 +246,6 @@ def _next_month(moment):
     if moment.month == 12:
         return date(moment.year + 1, 1, 1)
     return date(moment.year, moment.month + 1, 1)
-
-
-def _month_last(moment):
-    return date(moment.year, moment.month, monthrange(moment.year, moment.month)[1])
 
 
 def month_span(start, end):
@@ -575,6 +573,13 @@ def refresh_project_lives(
     if not settings.SAMPLE_ERP:
         client_names.update(fetch_customer_names(company))
     with transaction.atomic():
+        remembered = {
+            life.codigo_proyecto: life.review_status
+            for life in ProjectLife.objects.filter(
+                codigo_empresa=str(company),
+                codigo_proyecto__in=list(chosen),
+            )
+        }
         ProjectLife.objects.filter(codigo_empresa=str(company), codigo_proyecto__in=list(chosen)).delete()
         if on_project is not None:
             on_project(0, len(chosen), "")
@@ -590,6 +595,7 @@ def refresh_project_lives(
                 names,
                 labels or {},
                 client_names,
+                remembered.get(project, REVIEW_PENDING),
             )
             if on_project is not None:
                 on_project(index, len(chosen), _months_label(project_orders))
@@ -636,7 +642,17 @@ def _document_lines(life, kind, document_key, header_amount, header_date, lines,
 
 
 def _store_life(
-    company, project, orders, sales_deliveries, purchase_orders, purchase_deliveries, movements, names, labels, customers
+    company,
+    project,
+    orders,
+    sales_deliveries,
+    purchase_orders,
+    purchase_deliveries,
+    movements,
+    names,
+    labels,
+    customers,
+    review_status=REVIEW_PENDING,
 ):
     dates = [order.order_date for order in orders if order.order_date is not None]
     bases = []
@@ -661,6 +677,7 @@ def _store_life(
         incomplete=incomplete,
         levels_stored=True,
         lines_stored=True,
+        review_status=review_status,
     )
     document_lines = []
     order_shares = []
@@ -1108,16 +1125,12 @@ def load_project(company, code, groups, today):
         )
     months = []
     for start in month_span(life.order_date, end):
-        last = _month_last(start)
+        in_month = [row for row in dated if _month_start(row.delivery_date) == start]
         cumulative = progression_figures(
             life.order_base,
-            [(row.billing, row.amount) for row in dated if row.delivery_date <= last],
+            [(row.billing, row.amount) for row in in_month],
         )
-        month_delivered = [
-            row.amount
-            for row in dated
-            if _month_start(row.delivery_date) == start
-        ]
+        month_delivered = [row.amount for row in in_month]
         month_expenses = [
             row.amount
             for row in expenses
@@ -1325,6 +1338,7 @@ def load_project(company, code, groups, today):
         "donut": donut,
         "negative_margin": format_money(net_margin) if show_net_margin and net_margin is not None and net_margin < 0 else "",
         "customer": _label(life.customer_code, life.customer_name, show_clients) if life.customer_code and show_order else "",
+        "review_status": life.review_status,
         "start": _date_text(life.order_date),
         "end": _date_text(end) if life.order_date is not None else "",
         "years": ", ".join(str(year) for year in sorted(years)),

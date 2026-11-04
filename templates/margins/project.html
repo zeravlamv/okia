@@ -10,6 +10,15 @@
     {% if pending_refresh %}
       <p class="alert alert-warning">No hay ficha de este proyecto. Pulse Actualizar para calcularla.</p>
     {% else %}
+      <form class="review-status" method="post" action="{% url 'project-life' project_code %}">
+        {% csrf_token %}
+        <label for="revision">Revisión</label>
+        <select id="revision" name="revision">
+          <option value="Pdte. Revisar"{% if life.review_status == "Pdte. Revisar" %} selected{% endif %}>Pdte. Revisar</option>
+          <option value="Revisado"{% if life.review_status == "Revisado" %} selected{% endif %}>Revisado</option>
+        </select>
+        <button type="submit">Guardar</button>
+      </form>
       <p class="fiche-meta">
         {% if life.show_order and life.start %}Pedido del {{ life.start }}{% endif %}
         {% if life.years %}{% if life.show_order and life.start %} · {% endif %}Ejercicios {{ life.years }}{% endif %}

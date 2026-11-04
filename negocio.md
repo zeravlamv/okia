@@ -80,6 +80,10 @@ La ficha de un proyecto empieza en la fecha del pedido de venta y sigue por los 
 
 Resumen mes separa el comercial de la analítica. El pedido de venta y el de compra son los fechados en el mes. El albarán de venta y el de compra son los creados en el mes, aunque el pedido sea de otro: un albarán de marzo de un pedido de febrero entra en marzo. El margen de las tarjetas es esos albaranes de venta menos los gastos. La analítica toma los proyectos cuyo pedido cae en el mes y, de ellos, los apuntes del grupo 6 y del grupo 7, aunque el asiento sea de otro mes. El grupo 6 son los gastos, incluido el 60. El grupo 7 son los ingresos. El margen analítico es ingresos menos gastos. El listado plegado sigue siendo la ficha completa de cada proyecto del mes. Abrir el resumen no lee el origen. Los ingresos del grupo 7 se guardan al pulsar Actualizar.
 
+## Aviso de discrepancias
+
+El cuadro de mando avisa, con una campanita, de los proyectos del ejercicio cuya ficha no cuadra y siguen en Pdte. Revisar. Compara el pedido de venta con lo albaranado y el pedido de compra con lo albaranado. No compara los ingresos. Un proyecto cuenta una vez. Revisado lo saca de la campanita hasta que la persona vuelva a elegir Pdte. Revisar. El botón de al lado abre esos proyectos revisados que siguen sin cuadrar. Abrir el aviso no lee el origen. Actualizar conserva el estado.
+
 ## Importes
 
 Se muestran con punto de miles, coma decimal y dos decimales, en la moneda de la empresa. Si la empresa no tiene moneda, se usa el euro. Ejemplo: 2.447.563,88 EUR. Una pieza sin importe no se suma y el resultado queda incompleto.

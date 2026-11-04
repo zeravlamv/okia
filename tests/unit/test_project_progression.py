@@ -306,16 +306,26 @@ def test_a_covered_order_still_reaches_a_cost_in_a_later_exercise():
     assert shown["start"] == "15/01/2026"
     assert shown["end"] == "18/03/2027"
     assert "01/2026" in labels
+    assert "02/2026" not in labels
     assert "03/2027" in labels
+    january = next(month for month in shown["months"] if month["label"] == "01/2026")
+    assert january["cumulative"] == "100,00 EUR"
+    assert january["invoiced"] == "100,00 EUR"
+    assert january["percent"] == "100,00 %"
     march = next(month for month in shown["months"] if month["label"] == "03/2027")
+    assert march["cumulative"] == "0,00 EUR"
+    assert march["invoiced"] == "0,00 EUR"
+    assert march["open"] == "0,00 EUR"
+    assert march["percent"] == "0,00 %"
     assert march["chart_purchases"] == Decimal("0")
     assert march["chart_expenses"] == Decimal("5")
     evolution = {month["label"]: month for month in shown["evolution"]}
+    assert "02/2026" not in evolution
     assert evolution["01/2026"]["margin"] == Decimal("100")
-    assert evolution["02/2026"]["margin"] == Decimal("100")
-    assert evolution["03/2027"]["margin"] == Decimal("95")
-    assert evolution["03/2027"]["series"][-1]["amount"] == "95,00 EUR"
-    assert evolution["03/2027"]["series"][-1]["negative"] is False
+    assert evolution["01/2026"]["series"][0]["amount"] == "100,00 EUR"
+    assert evolution["03/2027"]["margin"] == Decimal("-5")
+    assert evolution["03/2027"]["series"][-1]["amount"] == "-5,00 EUR"
+    assert evolution["03/2027"]["series"][-1]["negative"] is True
 
 
 @pytest.mark.django_db

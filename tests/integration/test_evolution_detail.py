@@ -106,7 +106,27 @@ def test_a_month_amount_lists_its_stored_documents():
         ]],
     }]
     assert spent["total"] == "15,00 EUR"
-    assert client.get("/evolucion/?mes=3&tipo=margen").status_code == 404
+    MonthLedger.objects.create(
+        codigo_empresa="1",
+        ejercicio=2026,
+        mes=3,
+        income_amount=Decimal("80"),
+        income_count=1,
+        expense_amount=Decimal("40"),
+        expense_count=2,
+    )
+    margin = client.get("/evolucion/?mes=3&tipo=margen")
+    assert margin.status_code == 200
+    opened = margin.json()
+    assert opened["kind"] == "margen"
+    assert opened["title"] == "Margen de marzo de 2026"
+    assert opened["source"] == "Grupo 7 menos el grupo 6"
+    assert opened["rows"] == [
+        ["Ingresos", "80,00 EUR"],
+        ["Compras", "15,00 EUR"],
+        ["Gastos", "25,00 EUR"],
+    ]
+    assert opened["total"] == "40,00 EUR"
 
 
 @pytest.mark.django_db
@@ -118,6 +138,7 @@ def test_gasto_detail_requires_the_movements_group():
 
     assert client.get("/evolucion/?mes=3&tipo=gasto").status_code == 403
     assert client.get("/evolucion/?mes=3&tipo=ingreso").status_code == 403
+    assert client.get("/evolucion/?mes=3&tipo=margen").status_code == 403
 
 
 @pytest.mark.django_db
